@@ -9,6 +9,7 @@ type Registry struct {
 	CashOut        *CashOutRepository
 	Verifier       *VerifierRepository
 	Checkpoint     *CheckpointRepository
+	User           *UserRepository
 }
 
 func NewRegistry(db *gorm.DB) Registry {
@@ -19,5 +20,6 @@ func NewRegistry(db *gorm.DB) Registry {
 		CashOut:        &CashOutRepository{DB: db},
 		Verifier:       &VerifierRepository{DB: db},
 		Checkpoint:     &CheckpointRepository{DB: db},
+		User:           &UserRepository{DB: db},
 	}
 }
