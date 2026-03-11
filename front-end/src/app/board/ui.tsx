@@ -8,13 +8,11 @@ import {
   ShieldAlert,
   XCircle,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { type Address, formatUnits, isAddress, keccak256, toHex } from "viem";
-import {
-  useReadContracts,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "wagmi";
 import AuthGuard from "@/components/AuthGuard";
 import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
@@ -35,26 +33,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiFetch } from "@/lib/auth";
-import {
-  type CashOutRequest,
-  ERC20_ABI,
-  MASJID_INSTANCE_ABI,
-  VerificationStatus,
-} from "@/lib/contracts";
+import type { CashOutRequest } from "@/lib/contracts";
 import { formatIDRXCompact } from "@/lib/idrx";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type MasjidInfo = {
-  masjid_id: string;
-  masjid_name: string;
-  instance_addr: string;
-  vault_addr: string;
-  status: string;
-};
+import {
+  useBoardDashboard,
+  useCancelCashOut,
+  useExecuteCashOut,
+  useProposeCashOut,
+} from "./hooks";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,19 +52,50 @@ function shortenAddr(addr: string) {
 
 function cashOutStatusBadge(req: CashOutRequest, threshold: bigint) {
   if (req.canceled)
-    return <Badge className="bg-slate-100 text-slate-600 border-none">Dibatalkan</Badge>;
+    return (
+      <Badge className="bg-slate-100 text-slate-600 border-none">
+        Dibatalkan
+      </Badge>
+    );
   if (req.executed)
-    return <Badge className="bg-emerald-100 text-emerald-800 border-none">Executed</Badge>;
+    return (
+      <Badge className="bg-emerald-100 text-emerald-800 border-none">
+        Executed
+      </Badge>
+    );
   if (BigInt(req.approvals) >= threshold)
-    return <Badge className="bg-blue-100 text-blue-800 border-none">Siap Eksekusi</Badge>;
+    return (
+      <Badge className="bg-blue-100 text-blue-800 border-none">
+        Siap Eksekusi
+      </Badge>
+    );
   if (req.expiresAt < BigInt(Math.floor(Date.now() / 1000)))
-    return <Badge className="bg-red-100 text-red-800 border-none">Expired</Badge>;
-  return <Badge className="bg-amber-100 text-amber-800 border-none">Menunggu Approval</Badge>;
+    return (
+      <Badge className="bg-red-100 text-red-800 border-none">Expired</Badge>
+    );
+  return (
+    <Badge className="bg-amber-100 text-amber-800 border-none">
+      Menunggu Approval
+    </Badge>
+  );
 }
 
 // ---------------------------------------------------------------------------
 // Propose form
 // ---------------------------------------------------------------------------
+
+const proposeSchema = z.object({
+  to: z.string().refine((v) => isAddress(v), { message: "Alamat tujuan tidak valid." }),
+  amount: z.coerce
+    .number({ error: "Jumlah harus berupa angka." })
+    .positive("Jumlah harus lebih dari 0."),
+  note: z.string().optional(),
+  expiryDays: z.coerce
+    .number({ error: "Batas waktu harus berupa angka." })
+    .int("Harus bilangan bulat.")
+    .min(1, "Minimal 1 hari."),
+});
+type ProposeFormValues = z.input<typeof proposeSchema>;
 
 function ProposeCashOutForm({
   instanceAddress,
@@ -87,57 +104,43 @@ function ProposeCashOutForm({
   instanceAddress: Address;
   onSuccess: () => void;
 }) {
-  const [to, setTo] = useState("");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
-  const [expiryDays, setExpiryDays] = useState("3");
-  const [formError, setFormError] = useState<string | null>(null);
+  const propose = useProposeCashOut();
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<ProposeFormValues>({
+    resolver: zodResolver(proposeSchema),
+    defaultValues: { expiryDays: 3 },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setFormError(null);
-
-    if (!isAddress(to)) return setFormError("Alamat tujuan tidak valid.");
-    const amountNum = parseFloat(amount);
-    if (isNaN(amountNum) || amountNum <= 0)
-      return setFormError("Jumlah harus lebih dari 0.");
-    const days = Number(expiryDays);
-    if (!days || days < 1) return setFormError("Minimal 1 hari expiry.");
-
-    const noteHash = note.trim()
-      ? keccak256(toHex(note.trim()))
+  const onSubmit = (values: ProposeFormValues) => {
+    const noteHash = values.note?.trim()
+      ? keccak256(toHex(values.note.trim()))
       : (("0x" + "0".repeat(64)) as `0x${string}`);
 
-    writeContract(
+    propose.mutate(
       {
-        address: instanceAddress,
-        abi: MASJID_INSTANCE_ABI,
-        functionName: "proposeCashOut",
-        args: [
-          to as Address,
-          BigInt(Math.round(amountNum * 100)), // IDRX has 2 decimals
-          noteHash,
-          BigInt(days * 86400),
-        ],
+        instanceAddress,
+        to: values.to as Address,
+        amount: BigInt(Math.round((values.amount as number) * 100)),
+        noteHash,
+        ttl: BigInt((values.expiryDays as number) * 86400),
       },
       {
         onSuccess: () => {
-          setTo("");
-          setAmount("");
-          setNote("");
-          setExpiryDays("3");
+          reset();
           onSuccess();
         },
       }
     );
   };
 
-  if (isSuccess) {
+  const isBusy = propose.isPending || propose.isConfirming;
+
+  if (propose.isConfirmed) {
     return (
       <div className="flex items-start gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
         <CheckCircle2 className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
@@ -154,7 +157,7 @@ function ProposeCashOutForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <Label className="text-slate-700 text-base">
@@ -162,11 +165,13 @@ function ProposeCashOutForm({
           </Label>
           <Input
             placeholder="0x..."
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            disabled={isPending || isConfirming}
+            disabled={isBusy}
             className="font-mono text-sm border-slate-300 focus-visible:ring-emerald-500"
+            {...register("to")}
           />
+          {errors.to && (
+            <p className="text-sm text-red-600">{errors.to.message}</p>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -178,11 +183,13 @@ function ProposeCashOutForm({
             min="1"
             step="1"
             placeholder="0"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            disabled={isPending || isConfirming}
+            disabled={isBusy}
             className="border-slate-300 focus-visible:ring-emerald-500"
+            {...register("amount")}
           />
+          {errors.amount && (
+            <p className="text-sm text-red-600">{errors.amount.message}</p>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -191,10 +198,9 @@ function ProposeCashOutForm({
           </Label>
           <Input
             placeholder="Contoh: Operasional listrik bulan ini"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            disabled={isPending || isConfirming}
+            disabled={isBusy}
             className="border-slate-300 focus-visible:ring-emerald-500"
+            {...register("note")}
           />
           <p className="text-xs text-slate-400">
             Akan di-hash (keccak256) sebelum disimpan on-chain.
@@ -209,29 +215,31 @@ function ProposeCashOutForm({
             type="number"
             min={1}
             placeholder="3"
-            value={expiryDays}
-            onChange={(e) => setExpiryDays(e.target.value)}
-            disabled={isPending || isConfirming}
+            disabled={isBusy}
             className="border-slate-300 focus-visible:ring-emerald-500"
+            {...register("expiryDays")}
           />
+          {errors.expiryDays && (
+            <p className="text-sm text-red-600">{errors.expiryDays.message}</p>
+          )}
         </div>
       </div>
 
-      {formError && (
+      {propose.isError && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-          {formError}
+          {(propose.error as Error).message}
         </p>
       )}
 
       <Button
         type="submit"
-        disabled={isPending || isConfirming}
+        disabled={isBusy}
         className="w-full bg-emerald-700 hover:bg-emerald-800 text-white rounded-md h-11 text-base"
       >
-        {isPending || isConfirming ? (
+        {isBusy ? (
           <>
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            {isPending ? "Konfirmasi di wallet…" : "Menunggu konfirmasi…"}
+            {propose.isPending ? "Konfirmasi di wallet…" : "Menunggu konfirmasi…"}
           </>
         ) : (
           <>
@@ -260,19 +268,16 @@ function CashOutActions({
   threshold: bigint;
   onSettled: () => void;
 }) {
-  const { writeContract, data: txHash, isPending, variables } =
-    useWriteContract();
-  const { isLoading: isConfirming } = useWaitForTransactionReceipt({
-    hash: txHash,
-    query: { enabled: !!txHash },
-  });
+  const execute = useExecuteCashOut();
+  const cancel = useCancelCashOut();
 
   if (req.executed || req.canceled) return null;
 
   const canExecute = BigInt(req.approvals) >= threshold;
   const isExpired = req.expiresAt < BigInt(Math.floor(Date.now() / 1000));
-  const isBusy = isPending || isConfirming;
-  const currentFn = variables?.functionName;
+  const isBusy =
+    execute.isPending || execute.isConfirming ||
+    cancel.isPending || cancel.isConfirming;
 
   return (
     <div className="flex gap-2 justify-end">
@@ -282,19 +287,14 @@ function CashOutActions({
           variant="outline"
           className="border-emerald-200 text-emerald-700 hover:bg-emerald-50"
           onClick={() =>
-            writeContract(
-              {
-                address: instanceAddress,
-                abi: MASJID_INSTANCE_ABI,
-                functionName: "executeCashOut",
-                args: [requestId],
-              },
+            execute.mutate(
+              { instanceAddress, requestId },
               { onSuccess: onSettled }
             )
           }
           disabled={isBusy}
         >
-          {isBusy && currentFn === "executeCashOut" ? (
+          {execute.isPending || execute.isConfirming ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <>
@@ -308,19 +308,14 @@ function CashOutActions({
         variant="ghost"
         className="text-red-600 hover:bg-red-50 hover:text-red-700"
         onClick={() =>
-          writeContract(
-            {
-              address: instanceAddress,
-              abi: MASJID_INSTANCE_ABI,
-              functionName: "cancelCashOut",
-              args: [requestId],
-            },
+          cancel.mutate(
+            { instanceAddress, requestId },
             { onSuccess: onSettled }
           )
         }
         disabled={isBusy}
       >
-        {isBusy && currentFn === "cancelCashOut" ? (
+        {cancel.isPending || cancel.isConfirming ? (
           <Loader2 className="w-4 h-4 animate-spin" />
         ) : (
           <XCircle className="w-4 h-4" />
@@ -335,103 +330,25 @@ function CashOutActions({
 // ---------------------------------------------------------------------------
 
 function BoardDashboardInner() {
-  const [masjid, setMasjid] = useState<MasjidInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [apiError, setApiError] = useState<string | null>(null);
   const [showPropose, setShowPropose] = useState(false);
-  const [refreshNonce, setRefreshNonce] = useState(0);
 
-  const refresh = () => setRefreshNonce((n) => n + 1);
+  const {
+    masjid,
+    isLoading,
+    apiError,
+    instanceAddress,
+    loadingInstance,
+    cashOutThreshold,
+    boardMemberCount,
+    formattedBalance,
+    symbol,
+    decimals,
+    requestIds,
+    requests,
+    isVerified,
+  } = useBoardDashboard();
 
-  // Load masjid info from backend
-  useEffect(() => {
-    setLoading(true);
-    apiFetch("/board/masjid")
-      .then(async (res) => {
-        if (!res.ok) {
-          const err = (await res.json()) as { error?: string };
-          throw new Error(err.error ?? "Gagal memuat data masjid");
-        }
-        const data = (await res.json()) as { data: MasjidInfo };
-        setMasjid(data.data);
-      })
-      .catch((err: unknown) => setApiError((err as Error).message))
-      .finally(() => setLoading(false));
-  }, [refreshNonce]);
-
-  const instanceAddress = masjid?.instance_addr as Address | undefined;
-
-  const instanceContract = instanceAddress
-    ? ({ address: instanceAddress, abi: MASJID_INSTANCE_ABI } as const)
-    : null;
-
-  const { data: instanceData, isLoading: loadingInstance } = useReadContracts({
-    contracts: instanceContract
-      ? [
-          { ...instanceContract, functionName: "status" },
-          { ...instanceContract, functionName: "cashOutThreshold" },
-          { ...instanceContract, functionName: "cashOutVerifierCount" },
-          { ...instanceContract, functionName: "cashOutNonce" },
-          { ...instanceContract, functionName: "STABLECOIN" },
-          { ...instanceContract, functionName: "balance" },
-        ]
-      : [],
-    query: { enabled: !!instanceAddress, refetchInterval: 8000 },
-  });
-
-  const instanceStatus = instanceData?.[0]?.result as number | undefined;
-  const cashOutThreshold = instanceData?.[1]?.result as bigint | undefined;
-  const verifierCount = instanceData?.[2]?.result as bigint | undefined;
-  const cashOutNonce = instanceData?.[3]?.result as bigint | undefined;
-  const stablecoinAddress = instanceData?.[4]?.result as Address | undefined;
-  const rawBalance = instanceData?.[5]?.result as bigint | undefined;
-
-  const { data: tokenData } = useReadContracts({
-    contracts: stablecoinAddress
-      ? [
-          { address: stablecoinAddress, abi: ERC20_ABI, functionName: "decimals" },
-          { address: stablecoinAddress, abi: ERC20_ABI, functionName: "symbol" },
-        ]
-      : [],
-    query: { enabled: !!stablecoinAddress },
-  });
-
-  const decimals = (tokenData?.[0]?.result as number | undefined) ?? 2;
-  const symbol = (tokenData?.[1]?.result as string | undefined) ?? "IDRX";
-
-  const formattedBalance =
-    rawBalance !== undefined
-      ? symbol === "IDRX"
-        ? formatIDRXCompact(rawBalance)
-        : `${parseFloat(formatUnits(rawBalance, decimals)).toLocaleString("id-ID", {
-            minimumFractionDigits: 2,
-          })} ${symbol}`
-      : "—";
-
-  const requestIds =
-    cashOutNonce !== undefined
-      ? Array.from({ length: Number(cashOutNonce) }, (_, i) => BigInt(i + 1))
-      : [];
-
-  const { data: cashOutData } = useReadContracts({
-    contracts:
-      instanceAddress && requestIds.length > 0
-        ? requestIds.map((id) => ({
-            address: instanceAddress,
-            abi: MASJID_INSTANCE_ABI,
-            functionName: "cashOutById" as const,
-            args: [id] as const,
-          }))
-        : [],
-    query: {
-      enabled: !!instanceAddress && requestIds.length > 0,
-      refetchInterval: 8000,
-    },
-  });
-
-  const isVerified = instanceStatus === VerificationStatus.Verified;
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-6 h-6 text-emerald-600 animate-spin mr-2" />
@@ -445,7 +362,9 @@ function BoardDashboardInner() {
       <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl max-w-lg">
         <ShieldAlert className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
         <div>
-          <p className="text-sm font-semibold text-red-800">Gagal memuat data</p>
+          <p className="text-sm font-semibold text-red-800">
+            Gagal memuat data
+          </p>
           <p className="text-xs text-red-700 mt-0.5">{apiError}</p>
         </div>
       </div>
@@ -455,9 +374,12 @@ function BoardDashboardInner() {
   if (!masjid) {
     return (
       <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl max-w-lg">
-        <p className="text-sm font-semibold text-amber-800">Masjid belum terdaftar</p>
+        <p className="text-sm font-semibold text-amber-800">
+          Masjid belum terdaftar
+        </p>
         <p className="text-xs text-amber-700 mt-1">
-          Wallet Anda belum terhubung dengan masjid manapun. Silakan daftarkan masjid terlebih dahulu.
+          Wallet Anda belum terhubung dengan masjid manapun. Silakan daftarkan
+          masjid terlebih dahulu.
         </p>
       </div>
     );
@@ -469,10 +391,14 @@ function BoardDashboardInner() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="border-slate-200 shadow-sm bg-white">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">Nama Masjid</CardTitle>
+            <CardTitle className="text-sm font-medium text-slate-500">
+              Nama Masjid
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl font-bold text-slate-800">{masjid.masjid_name}</div>
+            <div className="text-xl font-bold text-slate-800">
+              {masjid.masjid_name}
+            </div>
             <p className="font-mono text-[10px] text-slate-400 mt-1 truncate">
               {masjid.instance_addr}
             </p>
@@ -481,13 +407,17 @@ function BoardDashboardInner() {
 
         <Card className="border-slate-200 shadow-sm bg-white">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-slate-500">Saldo Kas</CardTitle>
+            <CardTitle className="text-sm font-medium text-slate-500">
+              Saldo Kas
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {loadingInstance ? (
               <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
             ) : (
-              <div className="text-2xl font-bold text-emerald-700">{formattedBalance}</div>
+              <div className="text-2xl font-bold text-emerald-700">
+                {formattedBalance}
+              </div>
             )}
           </CardContent>
         </Card>
@@ -502,7 +432,7 @@ function BoardDashboardInner() {
             <div className="text-2xl font-bold text-slate-800">
               {cashOutThreshold?.toString() ?? "—"}{" "}
               <span className="text-sm font-normal text-slate-500">
-                dari {verifierCount?.toString() ?? "?"} anggota dewan
+                dari {boardMemberCount?.toString() ?? "?"} anggota dewan
               </span>
             </div>
           </CardContent>
@@ -547,7 +477,6 @@ function BoardDashboardInner() {
               <ProposeCashOutForm
                 instanceAddress={instanceAddress}
                 onSuccess={() => {
-                  refresh();
                   setShowPropose(false);
                 }}
               />
@@ -568,35 +497,13 @@ function BoardDashboardInner() {
                   <TableHead className="text-slate-600">Persetujuan</TableHead>
                   <TableHead className="text-slate-600">Kadaluarsa</TableHead>
                   <TableHead className="text-slate-600">Status</TableHead>
-                  <TableHead className="text-right text-slate-600">Aksi</TableHead>
+                  <TableHead className="text-right text-slate-600">
+                    Aksi
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {cashOutData?.map((result, idx) => {
-                  if (!result?.result) return null;
-                  const r = result.result as readonly [
-                    Address,
-                    bigint,
-                    `0x${string}`,
-                    Address,
-                    bigint,
-                    bigint,
-                    number,
-                    boolean,
-                    boolean,
-                  ];
-                  const req: CashOutRequest = {
-                    to: r[0],
-                    amount: r[1],
-                    noteHash: r[2],
-                    proposer: r[3],
-                    createdAt: r[4],
-                    expiresAt: r[5],
-                    approvals: r[6],
-                    executed: r[7],
-                    canceled: r[8],
-                  };
-                  const requestId = requestIds[idx];
+                {requests.map(({ requestId, req }) => {
                   const expiryDate = new Date(
                     Number(req.expiresAt) * 1000
                   ).toLocaleDateString("id-ID", {
@@ -608,10 +515,15 @@ function BoardDashboardInner() {
                   const amountDisplay =
                     symbol === "IDRX"
                       ? formatIDRXCompact(req.amount)
-                      : `${parseFloat(formatUnits(req.amount, decimals)).toLocaleString("id-ID")} ${symbol}`;
+                      : `${parseFloat(
+                          formatUnits(req.amount, decimals)
+                        ).toLocaleString("id-ID")} ${symbol}`;
 
                   return (
-                    <TableRow key={requestId.toString()} className="border-slate-100">
+                    <TableRow
+                      key={requestId.toString()}
+                      className="border-slate-100"
+                    >
                       <TableCell className="font-mono text-xs">
                         #{requestId.toString()}
                       </TableCell>
@@ -624,7 +536,8 @@ function BoardDashboardInner() {
                       <TableCell className="text-slate-600">
                         <div className="flex flex-col gap-1 min-w-[80px]">
                           <span className="text-xs font-medium">
-                            {req.approvals} / {cashOutThreshold?.toString() ?? "?"}
+                            {req.approvals} /{" "}
+                            {cashOutThreshold?.toString() ?? "?"}
                           </span>
                           <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
                             <div
@@ -634,7 +547,9 @@ function BoardDashboardInner() {
                                   100,
                                   cashOutThreshold
                                     ? Math.round(
-                                        (req.approvals / Number(cashOutThreshold)) * 100
+                                        (req.approvals /
+                                          Number(cashOutThreshold)) *
+                                          100
                                       )
                                     : 0
                                 )}%`,
@@ -647,7 +562,10 @@ function BoardDashboardInner() {
                         {expiryDate}
                       </TableCell>
                       <TableCell>
-                        {cashOutStatusBadge(req, cashOutThreshold ?? BigInt(0))}
+                        {cashOutStatusBadge(
+                          req,
+                          cashOutThreshold ?? BigInt(0)
+                        )}
                       </TableCell>
                       <TableCell>
                         {instanceAddress && (
@@ -656,7 +574,9 @@ function BoardDashboardInner() {
                             requestId={requestId}
                             req={req}
                             threshold={cashOutThreshold ?? BigInt(0)}
-                            onSettled={refresh}
+                            onSettled={() => {
+                              /* TanStack Query + wagmi refetch handles stale data via refetchInterval */
+                            }}
                           />
                         )}
                       </TableCell>
@@ -677,7 +597,9 @@ export default function BoardUI() {
     <AuthGuard role="board">
       <Layout>
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-slate-900">Dashboard Pengurus</h2>
+          <h2 className="text-3xl font-bold text-slate-900">
+            Dashboard Pengurus
+          </h2>
           <p className="text-slate-500 mt-2">
             Kelola pencairan dana dan informasi masjid Anda.
           </p>

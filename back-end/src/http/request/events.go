@@ -111,6 +111,16 @@ type VerifierRemovedEvent struct {
 	Timestamp   int64  `json:"timestamp" binding:"required"`
 }
 
+// BoardMemberUpdatedEvent mirrors the BoardMemberUpdated on-chain event from MasjidInstance.
+type BoardMemberUpdatedEvent struct {
+	InstanceAddr string `json:"instance_addr" binding:"required"`
+	Member       string `json:"member" binding:"required"`
+	Allowed      bool   `json:"allowed"`
+	BlockNumber  int64  `json:"block_number" binding:"required"`
+	TxHash       string `json:"tx_hash" binding:"required"`
+	Timestamp    int64  `json:"timestamp" binding:"required"`
+}
+
 // CheckpointUpdate is used to advance the indexer cursor.
 type CheckpointUpdate struct {
 	ContractAddr string `json:"contract_addr" binding:"required"`

@@ -124,6 +124,20 @@ func (h *InternalHandler) CashOutCanceled(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// POST /internal/events/board-member-updated
+func (h *InternalHandler) BoardMemberUpdated(c *gin.Context) {
+	var ev request.BoardMemberUpdatedEvent
+	if err := c.ShouldBindJSON(&ev); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.Event.HandleBoardMemberUpdated(c.Request.Context(), ev); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 // POST /internal/events/verifier-added
 func (h *InternalHandler) VerifierAdded(c *gin.Context) {
 	var ev request.VerifierAddedEvent

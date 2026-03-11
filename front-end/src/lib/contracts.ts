@@ -10,6 +10,9 @@ export const CONTRACT_ADDRESSES = {
 
 	verifierRegistry: (process.env.NEXT_PUBLIC_VERIFIER_REGISTRY_ADDRESS ??
 		"0x0000000000000000000000000000000000000000") as Address,
+
+	idrx: (process.env.NEXT_PUBLIC_IDRX_ADDRESS ??
+		"0x0000000000000000000000000000000000000000") as Address,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -122,7 +125,7 @@ export const MASJID_PROTOCOL_ABI = [
 			{ name: "masjidName", type: "string" },
 			{ name: "metadataUri", type: "string" },
 			{ name: "stablecoin", type: "address" },
-			{ name: "cashOutVerifiers", type: "address[]" },
+			{ name: "initialBoardMembers", type: "address[]" },
 			{ name: "cashOutThreshold", type: "uint256" },
 		],
 		outputs: [
@@ -254,6 +257,46 @@ export const MASJID_PROTOCOL_ABI = [
 // ---------------------------------------------------------------------------
 
 export const MASJID_INSTANCE_ABI = [
+	// ── Role constants ────────────────────────────────────────────────────────
+	{
+		type: "function",
+		name: "PROTOCOL_ROLE",
+		inputs: [],
+		outputs: [{ name: "", type: "bytes32" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "ADMIN_ROLE",
+		inputs: [],
+		outputs: [{ name: "", type: "bytes32" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "BOARD_ROLE",
+		inputs: [],
+		outputs: [{ name: "", type: "bytes32" }],
+		stateMutability: "view",
+	},
+	// ── AccessControl ─────────────────────────────────────────────────────────
+	{
+		type: "function",
+		name: "hasRole",
+		inputs: [
+			{ name: "role", type: "bytes32" },
+			{ name: "account", type: "address" },
+		],
+		outputs: [{ name: "", type: "bool" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "getRoleAdmin",
+		inputs: [{ name: "role", type: "bytes32" }],
+		outputs: [{ name: "", type: "bytes32" }],
+		stateMutability: "view",
+	},
 	// ── View ──────────────────────────────────────────────────────────────────
 	{
 		type: "function",
@@ -341,7 +384,7 @@ export const MASJID_INSTANCE_ABI = [
 	},
 	{
 		type: "function",
-		name: "cashOutVerifierCount",
+		name: "boardMemberCount",
 		inputs: [],
 		outputs: [{ name: "", type: "uint256" }],
 		stateMutability: "view",
@@ -351,13 +394,6 @@ export const MASJID_INSTANCE_ABI = [
 		name: "cashOutNonce",
 		inputs: [],
 		outputs: [{ name: "", type: "uint256" }],
-		stateMutability: "view",
-	},
-	{
-		type: "function",
-		name: "isCashOutVerifier",
-		inputs: [{ name: "", type: "address" }],
-		outputs: [{ name: "", type: "bool" }],
 		stateMutability: "view",
 	},
 	{
@@ -433,9 +469,9 @@ export const MASJID_INSTANCE_ABI = [
 	},
 	{
 		type: "function",
-		name: "setCashOutVerifier",
+		name: "setBoardMember",
 		inputs: [
-			{ name: "verifier", type: "address" },
+			{ name: "member", type: "address" },
 			{ name: "allowed", type: "bool" },
 		],
 		outputs: [],
@@ -520,9 +556,16 @@ export const MASJID_INSTANCE_ABI = [
 		],
 		anonymous: false,
 	},
+	{
+		type: "event",
+		name: "BoardMemberUpdated",
+		inputs: [
+			{ name: "member", type: "address", indexed: true },
+			{ name: "allowed", type: "bool", indexed: false },
+		],
+		anonymous: false,
+	},
 	// ── Errors ────────────────────────────────────────────────────────────────
-	{ type: "error", name: "NotAdmin", inputs: [] },
-	{ type: "error", name: "NotCashOutVerifier", inputs: [] },
 	{ type: "error", name: "OnlyProtocol", inputs: [] },
 	{ type: "error", name: "ZeroAddress", inputs: [] },
 	{ type: "error", name: "AmountZero", inputs: [] },

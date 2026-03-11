@@ -120,6 +120,7 @@ func SetupRouter(db *gorm.DB, repos repository.Registry, svc service.Registry) *
 		ev.POST("/cashout-approved", internalH.CashOutApproved)
 		ev.POST("/cashout-executed", internalH.CashOutExecuted)
 		ev.POST("/cashout-canceled", internalH.CashOutCanceled)
+		ev.POST("/board-member-updated", internalH.BoardMemberUpdated)
 		ev.POST("/verifier-added", internalH.VerifierAdded)
 		ev.POST("/verifier-removed", internalH.VerifierRemoved)
 

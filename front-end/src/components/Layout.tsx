@@ -6,10 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 
-const NAV_LINKS = [
-  { href: "/", label: "Explorer" },
-  { href: "/register", label: "Daftar Masjid" },
-];
+const NAV_LINKS = [{ href: "/", label: "Explorer" }];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

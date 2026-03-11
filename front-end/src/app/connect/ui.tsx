@@ -1,7 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Building2, Loader2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { getClaims, roleRedirect, siweLogin, updateName } from "@/lib/auth";
 
-type Step = "connect" | "signing" | "name" | "redirecting";
+type Step = "connect" | "signing" | "name" | "redirecting" | "done";
 
 export default function ConnectUI() {
   const router = useRouter();
@@ -56,6 +56,8 @@ export default function ConnectUI() {
       .then((claims) => {
         if (!claims.name) {
           setStep("name");
+        } else if (claims.role === "guest") {
+          setStep("done");
         } else {
           setStep("redirecting");
           router.replace(roleRedirect(claims.role));
@@ -75,8 +77,12 @@ export default function ConnectUI() {
     setNameError(null);
     try {
       const claims = await updateName(trimmed);
-      setStep("redirecting");
-      router.replace(roleRedirect(claims.role));
+      if (claims.role === "guest") {
+        setStep("done");
+      } else {
+        setStep("redirecting");
+        router.replace(roleRedirect(claims.role));
+      }
     } catch (err: unknown) {
       setNameError((err as Error).message);
     }
@@ -187,6 +193,28 @@ export default function ConnectUI() {
                   Simpan & Lanjutkan
                 </Button>
               </form>
+            </div>
+          )}
+
+          {/* Step: done (guest — needs to register masjid) */}
+          {step === "done" && (
+            <div className="space-y-6 text-center">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">
+                  Akun berhasil dibuat!
+                </h2>
+                <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                  Daftarkan masjid Anda untuk mendapatkan akses penuh sebagai
+                  pengurus.
+                </p>
+              </div>
+              <Button
+                className="w-full bg-emerald-700 hover:bg-emerald-800 text-white h-11 text-base"
+                onClick={() => router.push("/board/register")}
+              >
+                <Building2 className="w-4 h-4 mr-2" />
+                Daftarkan Masjid
+              </Button>
             </div>
           )}
 

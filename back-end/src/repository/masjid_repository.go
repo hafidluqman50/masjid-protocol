@@ -128,3 +128,12 @@ func (r *MasjidRepository) Create(ctx context.Context, reg *model.MasjidRegistra
 func (r *MasjidRepository) Update(ctx context.Context, reg *model.MasjidRegistration) error {
 	return r.DB.WithContext(ctx).Save(reg).Error
 }
+
+// ListInstanceAddresses returns all known instance addresses (lowercase) for indexer use.
+func (r *MasjidRepository) ListInstanceAddresses(ctx context.Context) ([]string, error) {
+	var addrs []string
+	err := r.DB.WithContext(ctx).
+		Model(&model.MasjidRegistration{}).
+		Pluck("instance_addr", &addrs).Error
+	return addrs, err
+}

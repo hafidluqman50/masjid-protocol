@@ -8,6 +8,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/masjid-chain/back-end/src/config"
 	"github.com/masjid-chain/back-end/src/http/routes"
+	"github.com/masjid-chain/back-end/src/indexer"
 	"github.com/masjid-chain/back-end/src/repository"
 	"github.com/masjid-chain/back-end/src/service"
 )
@@ -30,7 +31,14 @@ func buildHandler(ctx context.Context) (http.Handler, func() error, error) {
 	repos := repository.NewRegistry(db)
 	svc := service.NewRegistry(repos, jwtSecret)
 
+	// Start indexer in background — stops when ctx is cancelled.
+	idxCtx, idxCancel := context.WithCancel(ctx)
+	go indexer.New(repos, svc.Event).Run(idxCtx)
+
 	router := routes.SetupRouter(db, repos, svc)
 
-	return router, func() error { return sqlDB.Close() }, nil
+	return router, func() error {
+		idxCancel()
+		return sqlDB.Close()
+	}, nil
 }

@@ -169,6 +169,19 @@ func (s *EventService) HandleVerifierAdded(ctx context.Context, ev request.Verif
 	return s.User.Upsert(ctx, u)
 }
 
+func (s *EventService) HandleBoardMemberUpdated(ctx context.Context, ev request.BoardMemberUpdatedEvent) error {
+	if ev.Allowed {
+		u := &model.User{
+			Address:   strings.ToLower(ev.Member),
+			Role:      "board",
+			UpdatedAt: time.Now().UTC(),
+			CreatedAt: time.Unix(ev.Timestamp, 0).UTC(),
+		}
+		return s.User.Upsert(ctx, u)
+	}
+	return s.User.UpdateRole(ctx, ev.Member, "guest")
+}
+
 func (s *EventService) HandleVerifierRemoved(ctx context.Context, ev request.VerifierRemovedEvent) error {
 	removedAt := time.Unix(ev.Timestamp, 0).UTC()
 	if err := s.Verifier.Deactivate(ctx, ev.Address, removedAt); err != nil {

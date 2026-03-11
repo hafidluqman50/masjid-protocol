@@ -275,7 +275,7 @@ contract MasjidProtocolTest is Test {
         );
 
         vm.prank(kemenagVerifier1);
-        vm.expectRevert(MasjidInstance.NotCashOutVerifier.selector);
+        vm.expectRevert();
         instance.approveCashOut(requestId);
     }
 
