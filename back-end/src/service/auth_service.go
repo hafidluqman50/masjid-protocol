@@ -21,7 +21,7 @@ const (
 	nonceTTL    = 5 * time.Minute
 	jwtTTL      = 24 * time.Hour
 	siweVersion = "1"
-	siweChainID = "84532" // Base Sepolia
+	siweChainID = "84532"
 )
 
 type nonceEntry struct {
@@ -38,6 +38,7 @@ type Claims struct {
 
 type AuthService struct {
 	User      *repository.UserRepository
+	Masjid    *repository.MasjidRepository
 	JWTSecret []byte
 	nonces    sync.Map
 }
@@ -64,13 +65,11 @@ func (s *AuthService) BuildMessage(address, nonce, uri, domain string) string {
 }
 
 func (s *AuthService) VerifyAndLogin(ctx context.Context, address, message, signature string) (string, error) {
-	// Extract nonce from message
 	nonce, err := extractNonce(message)
 	if err != nil {
 		return "", errors.New("invalid message: nonce not found")
 	}
 
-	// Validate nonce
 	raw, ok := s.nonces.Load(nonce)
 	if !ok {
 		return "", errors.New("invalid or expired nonce")
@@ -86,7 +85,6 @@ func (s *AuthService) VerifyAndLogin(ctx context.Context, address, message, sign
 	}
 	s.nonces.Delete(nonce)
 
-	// Verify signature
 	recovered, err := recoverAddress(message, signature)
 	if err != nil {
 		return "", fmt.Errorf("signature verification failed: %w", err)
@@ -95,7 +93,6 @@ func (s *AuthService) VerifyAndLogin(ctx context.Context, address, message, sign
 		return "", errors.New("signature does not match address")
 	}
 
-	// Upsert user
 	user, exists, err := s.User.FindByAddress(ctx, address)
 	if err != nil {
 		return "", err
@@ -140,6 +137,20 @@ func (s *AuthService) UpdateName(ctx context.Context, address, name string) erro
 	return s.User.UpdateName(ctx, address, name)
 }
 
+func (s *AuthService) ClaimBoardRole(ctx context.Context, address string) (string, error) {
+	_, found, err := s.Masjid.FindByAdmin(ctx, address)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", errors.New("address bukan pengurus masjid yang terdaftar")
+	}
+	if err := s.User.UpdateRole(ctx, address, "board"); err != nil {
+		return "", err
+	}
+	return s.RefreshToken(ctx, address)
+}
+
 func (s *AuthService) RefreshToken(ctx context.Context, address string) (string, error) {
 	user, ok, err := s.User.FindByAddress(ctx, address)
 	if err != nil {
@@ -166,8 +177,6 @@ func (s *AuthService) issueJWT(user model.User) (string, error) {
 	return token.SignedString(s.JWTSecret)
 }
 
-// recoverAddress recovers the Ethereum address from an EIP-191 personal_sign signature.
-// Signature must be hex-encoded (with or without 0x prefix), 65 bytes: [R | S | V].
 func recoverAddress(message, signature string) (string, error) {
 	sigBytes, err := hex.DecodeString(strings.TrimPrefix(signature, "0x"))
 	if err != nil {
@@ -177,7 +186,6 @@ func recoverAddress(message, signature string) (string, error) {
 		return "", errors.New("invalid signature length: expected 65 bytes")
 	}
 
-	// Normalize V: Ethereum uses 27/28; secp256k1 recovery expects 0/1
 	v := sigBytes[64]
 	if v >= 27 {
 		v -= 27
@@ -186,23 +194,20 @@ func recoverAddress(message, signature string) (string, error) {
 		return "", errors.New("invalid recovery id")
 	}
 
-	// Compute Ethereum personal_sign hash: keccak256("\x19Ethereum Signed Message:\n{len}{msg}")
 	prefix := fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))
 	hash := keccak256Hash([]byte(prefix + message))
 
-	// Build secp256k1 compact signature: [27+v | R | S]
 	compact := make([]byte, 65)
 	compact[0] = 27 + v
-	copy(compact[1:33], sigBytes[0:32])  // R
-	copy(compact[33:65], sigBytes[32:64]) // S
+	copy(compact[1:33], sigBytes[0:32])
+	copy(compact[33:65], sigBytes[32:64])
 
 	pubKey, _, err := dcrececdsa.RecoverCompact(compact, hash)
 	if err != nil {
 		return "", fmt.Errorf("recover pubkey: %w", err)
 	}
 
-	// Derive Ethereum address: keccak256(uncompressed_pub[1:])[12:]
-	uncompressed := pubKey.SerializeUncompressed() // 65 bytes, starts with 0x04
+	uncompressed := pubKey.SerializeUncompressed()
 	addrBytes := keccak256Hash(uncompressed[1:])[12:]
 	return "0x" + hex.EncodeToString(addrBytes), nil
 }

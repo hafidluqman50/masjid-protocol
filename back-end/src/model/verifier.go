@@ -3,7 +3,8 @@ package model
 import "time"
 
 type Verifier struct {
-	Address     string     `gorm:"primaryKey;column:address" json:"address"`
+	ID          int64      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
+	Address     string     `gorm:"uniqueIndex;column:address;not null" json:"address"`
 	Label       string     `gorm:"column:label" json:"label"`
 	IsActive    bool       `gorm:"column:is_active;default:true" json:"is_active"`
 	AddedAt     time.Time  `gorm:"column:added_at" json:"added_at"`

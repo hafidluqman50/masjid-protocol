@@ -12,7 +12,6 @@ type VerifierHandler struct {
 	VerifierAttest *service.VerifierAttestService
 }
 
-// GET /public/verifiers
 func (h *VerifierHandler) ListActive(c *gin.Context) {
 	verifiers, err := h.Verifier.ListActive(c.Request.Context())
 	if err != nil {
@@ -22,7 +21,6 @@ func (h *VerifierHandler) ListActive(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": verifiers})
 }
 
-// GET /verifier/me  (JWT required, role=verifier)
 func (h *VerifierHandler) GetMe(c *gin.Context) {
 	addr := c.GetString("wallet_address")
 	v, ok, err := h.Verifier.FindByAddress(c.Request.Context(), addr)
@@ -37,10 +35,9 @@ func (h *VerifierHandler) GetMe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": v})
 }
 
-// GET /verifier/queue  (JWT required, role=verifier)
 func (h *VerifierHandler) GetQueue(c *gin.Context) {
 	addr := c.GetString("wallet_address")
-	queue, err := h.VerifierAttest.ListPendingForVerifier(c.Request.Context(), addr)
+	queue, err := h.VerifierAttest.GetQueue(c.Request.Context(), addr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -48,10 +45,9 @@ func (h *VerifierHandler) GetQueue(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": queue})
 }
 
-// GET /verifier/history  (JWT required, role=verifier)
 func (h *VerifierHandler) GetHistory(c *gin.Context) {
 	addr := c.GetString("wallet_address")
-	attests, err := h.VerifierAttest.ListByVerifier(c.Request.Context(), addr)
+	attests, err := h.VerifierAttest.GetHistory(c.Request.Context(), addr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

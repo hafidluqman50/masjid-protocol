@@ -13,7 +13,6 @@ type AuthHandler struct {
 	Auth *service.AuthService
 }
 
-// GET /auth/nonce?address=0x...
 func (h *AuthHandler) Nonce(c *gin.Context) {
 	var q request.NonceRequest
 	if err := c.ShouldBindQuery(&q); err != nil {
@@ -34,7 +33,6 @@ func (h *AuthHandler) Nonce(c *gin.Context) {
 	})
 }
 
-// POST /auth/verify
 func (h *AuthHandler) Verify(c *gin.Context) {
 	var body request.VerifyRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
@@ -49,7 +47,6 @@ func (h *AuthHandler) Verify(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token})
 }
 
-// GET /auth/me  (JWT required)
 func (h *AuthHandler) Me(c *gin.Context) {
 	address := c.GetString("wallet_address")
 	user, ok, err := h.Auth.GetMe(c.Request.Context(), address)
@@ -64,7 +61,16 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": user})
 }
 
-// PUT /auth/me/name  (JWT required)
+func (h *AuthHandler) ClaimBoardRole(c *gin.Context) {
+	address := c.GetString("wallet_address")
+	token, err := h.Auth.ClaimBoardRole(c.Request.Context(), address)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"token": token})
+}
+
 func (h *AuthHandler) UpdateName(c *gin.Context) {
 	address := c.GetString("wallet_address")
 	var body request.UpdateNameRequest
@@ -76,7 +82,6 @@ func (h *AuthHandler) UpdateName(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	// Re-issue JWT with updated name
 	token, err := h.Auth.RefreshToken(c.Request.Context(), address)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

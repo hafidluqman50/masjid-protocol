@@ -18,49 +18,54 @@ const (
 	pollInterval = 5 * time.Second
 )
 
-// event topics — computed once at init
 var (
 	topicMasjidRegistered    string
 	topicMasjidAttested      string
+	topicMasjidRejected      string
+	topicMasjidVerified      string
 	topicMasjidStatusUpdated string
-	topicCashIn              string
-	topicCashOutProposed     string
-	topicCashOutApproved     string
-	topicCashOutExecuted     string
-	topicCashOutCanceled     string
-	topicBoardMemberUpdated  string
-	topicVerifierAdded       string
-	topicVerifierRemoved     string
+
+	topicCashIn            string
+	topicCashOutProposed   string
+	topicCashOutApproved   string
+	topicCashOutExecuted   string
+	topicCashOutCanceled   string
+	topicBoardMemberUpdated string
+
+	topicVerifierAdded   string
+	topicVerifierRemoved string
 
 	selMasjidName  string
 	selMetadataUri string
 )
 
 func init() {
-	topicMasjidRegistered    = eventTopic("MasjidRegistered(bytes32,bytes32,address,address,address,address,address)")
-	topicMasjidAttested      = eventTopic("MasjidAttested(bytes32,address,bool,bytes32,uint32,uint32)")
+	topicMasjidRegistered    = eventTopic("MasjidRegistered(bytes32,bytes32,address,string,string,address,address[])")
+	topicMasjidAttested      = eventTopic("MasjidAttested(bytes32,address,bool,uint32,uint32)")
+	topicMasjidRejected      = eventTopic("MasjidRejected(bytes32,address[],uint32,uint32)")
+	topicMasjidVerified      = eventTopic("MasjidVerified(bytes32,address,address[],uint32,uint32)")
 	topicMasjidStatusUpdated = eventTopic("MasjidStatusUpdated(bytes32,uint8,uint8)")
-	topicCashIn              = eventTopic("CashIn(address,uint256,uint256,bytes32)")
-	topicCashOutProposed     = eventTopic("CashOutProposed(uint256,address,address,uint256,bytes32,uint64)")
-	topicCashOutApproved     = eventTopic("CashOutApproved(uint256,address,uint32)")
-	topicCashOutExecuted     = eventTopic("CashOutExecuted(uint256,address)")
-	topicCashOutCanceled     = eventTopic("CashOutCanceled(uint256,address)")
-	topicBoardMemberUpdated  = eventTopic("BoardMemberUpdated(address,bool)")
-	topicVerifierAdded       = eventTopic("VerifierAdded(address,string)")
-	topicVerifierRemoved     = eventTopic("VerifierRemoved(address)")
+
+	topicCashIn             = eventTopic("CashIn(address,uint256,uint256,bytes32)")
+	topicCashOutProposed    = eventTopic("CashOutProposed(uint256,address,address,uint256,bytes32,uint64)")
+	topicCashOutApproved    = eventTopic("CashOutApproved(uint256,address,uint32)")
+	topicCashOutExecuted    = eventTopic("CashOutExecuted(uint256,address)")
+	topicCashOutCanceled    = eventTopic("CashOutCanceled(uint256,address)")
+	topicBoardMemberUpdated = eventTopic("BoardMemberUpdated(address,bool)")
+	topicVerifierAdded      = eventTopic("VerifierAdded(address,string)")
+	topicVerifierRemoved    = eventTopic("VerifierRemoved(address)")
 
 	selMasjidName  = fnSelector("masjidName()")
 	selMetadataUri = fnSelector("metadataUri()")
 }
 
-// Indexer polls Base Sepolia and pushes decoded events into the EventService.
 type Indexer struct {
 	rpc      *RPCClient
 	repos    repository.Registry
 	eventSvc *service.EventService
 
-	protocol   string // lowercase hex address
-	registry   string // lowercase hex address
+	protocol   string
+	registry   string
 	startBlock uint64
 
 	tsCache   map[uint64]int64
@@ -85,7 +90,6 @@ func New(repos repository.Registry, eventSvc *service.EventService) *Indexer {
 	}
 }
 
-// Run starts the polling loop. It blocks until ctx is cancelled.
 func (idx *Indexer) Run(ctx context.Context) {
 	if idx.rpc.url == "" || idx.protocol == "" {
 		log.Println("[indexer] RPC_URL or MASJID_PROTOCOL_ADDRESS not set — indexer disabled")
@@ -95,7 +99,6 @@ func (idx *Indexer) Run(ctx context.Context) {
 	log.Printf("[indexer] starting (protocol=%s registry=%s startBlock=%d)",
 		idx.protocol, idx.registry, idx.startBlock)
 
-	// run once immediately, then on ticker
 	idx.tick(ctx)
 
 	ticker := time.NewTicker(pollInterval)
@@ -136,7 +139,6 @@ func (idx *Indexer) tick(ctx context.Context) {
 	}
 }
 
-// fromBlock returns the next block to process for the given contract.
 func (idx *Indexer) fromBlock(ctx context.Context, name string) uint64 {
 	cp, found, err := idx.repos.Checkpoint.Get(ctx, name)
 	if err != nil || !found {
@@ -149,7 +151,6 @@ func (idx *Indexer) fromBlock(ctx context.Context, name string) uint64 {
 	return next
 }
 
-// saveCheckpoint advances the checkpoint for a contract.
 func (idx *Indexer) saveCheckpoint(ctx context.Context, name, addr string, block uint64) {
 	cp, _, _ := idx.repos.Checkpoint.Get(ctx, name)
 	cp.ContractName = name
@@ -160,7 +161,6 @@ func (idx *Indexer) saveCheckpoint(ctx context.Context, name, addr string, block
 	}
 }
 
-// timestamp fetches (with cache) the block timestamp as Unix seconds.
 func (idx *Indexer) timestamp(ctx context.Context, blockNum uint64) int64 {
 	idx.tsCacheMu.Lock()
 	if ts, ok := idx.tsCache[blockNum]; ok {
@@ -184,7 +184,6 @@ func (idx *Indexer) timestamp(ctx context.Context, blockNum uint64) int64 {
 	return ts
 }
 
-// blockNumFromLog parses the hex blockNumber field in a Log.
 func blockNumFromLog(l Log) uint64 {
 	n, _ := parseHexUint64(l.BlockNumber)
 	return n

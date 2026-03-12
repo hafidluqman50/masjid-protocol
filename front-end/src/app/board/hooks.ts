@@ -15,15 +15,11 @@ import {
   ERC20_ABI,
   MASJID_INSTANCE_ABI,
   MASJID_PROTOCOL_ABI,
-  VerificationStatus,
+  InstanceVerificationStatus,
 } from "@/lib/contracts";
 import { mapContractError } from "@/lib/contractErrors";
 import { formatIDRXCompact } from "@/lib/idrx";
-import { fetchBoardMasjid } from "./api";
-
-// ---------------------------------------------------------------------------
-// REST API hook
-// ---------------------------------------------------------------------------
+import { fetchBoardDonations, fetchBoardMasjid, fetchBoardStats } from "./api";
 
 export function useBoardMasjid() {
   return useQuery({
@@ -32,9 +28,22 @@ export function useBoardMasjid() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// On-chain hooks
-// ---------------------------------------------------------------------------
+export function useBoardDonations(masjidId: string | undefined) {
+  return useQuery({
+    queryKey: ["board", "donations", masjidId],
+    queryFn: () => fetchBoardDonations(masjidId),
+    enabled: !!masjidId,
+  });
+}
+
+export function useBoardStats(masjidId: string | undefined) {
+  return useQuery({
+    queryKey: ["board", "stats", masjidId],
+    queryFn: () => fetchBoardStats(masjidId),
+    enabled: !!masjidId,
+    refetchInterval: 15000,
+  });
+}
 
 export function useInstanceContracts(instanceAddress: Address | undefined) {
   const instanceContract = instanceAddress
@@ -151,12 +160,14 @@ export function useCashOutRequests(
   return { requestIds, requests };
 }
 
-// ---------------------------------------------------------------------------
-// Derived / display helpers as a hook
-// ---------------------------------------------------------------------------
+export function useBoardDashboard(selectedMasjidId?: string) {
+  const { data: masjids, isLoading, error } = useBoardMasjid();
 
-export function useBoardDashboard() {
-  const { data: masjid, isLoading, error } = useBoardMasjid();
+  const masjid = masjids
+    ? (selectedMasjidId
+        ? masjids.find((m) => m.masjid_id === selectedMasjidId)
+        : masjids[0]) ?? null
+    : null;
 
   const instanceAddress = masjid?.instance_addr as Address | undefined;
 
@@ -187,10 +198,11 @@ export function useBoardDashboard() {
           )} ${symbol}`
       : "—";
 
-  const isVerified = instanceStatus === VerificationStatus.Verified;
+  const isVerified = instanceStatus === InstanceVerificationStatus.Verified;
 
   return {
     masjid,
+    masjids: masjids ?? [],
     isLoading,
     apiError: error ? (error as Error).message : null,
     instanceAddress,
@@ -205,10 +217,6 @@ export function useBoardDashboard() {
     isVerified,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Contract write hooks
-// ---------------------------------------------------------------------------
 
 export type ProposeCashOutArgs = {
   instanceAddress: Address;
@@ -312,16 +320,11 @@ export function useCancelCashOut() {
   return { ...mutation, isConfirming };
 }
 
-// ---------------------------------------------------------------------------
-// Register masjid hook
-// ---------------------------------------------------------------------------
-
 export type RegisterMasjidArgs = {
   name: string;
   metadataUri: string;
   stablecoin: Address;
   boardMembers: Address[];
-  threshold: bigint;
 };
 
 export function useRegisterMasjid() {
@@ -340,7 +343,6 @@ export function useRegisterMasjid() {
             params.metadataUri,
             params.stablecoin,
             params.boardMembers,
-            params.threshold,
           ],
         });
         return await writeContractAsync(request);

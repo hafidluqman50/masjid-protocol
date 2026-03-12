@@ -6,7 +6,7 @@ type CashOutRequest struct {
 	ID           int64      `gorm:"primaryKey;autoIncrement" json:"id"`
 	InstanceAddr string     `gorm:"column:instance_addr" json:"instance_addr"`
 	RequestID    int64      `gorm:"column:request_id" json:"request_id"`
-	MasjidID     *string    `gorm:"column:masjid_id" json:"masjid_id"`
+	MasjidID     *int64     `gorm:"column:masjid_id" json:"masjid_id"`
 	ToAddr       string     `gorm:"column:to_addr" json:"to_addr"`
 	Amount       string     `gorm:"column:amount;type:numeric(38)" json:"amount"`
 	NoteHash     string     `gorm:"column:note_hash" json:"note_hash"`
@@ -24,5 +24,5 @@ type CashOutRequest struct {
 }
 
 func (CashOutRequest) TableName() string {
-	return "cash_out_requests"
+	return "cash_outs"
 }

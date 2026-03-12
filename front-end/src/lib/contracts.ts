@@ -1,9 +1,5 @@
 import type { Address } from "viem";
 
-// ---------------------------------------------------------------------------
-// Contract addresses — set via environment variables per network.
-// ---------------------------------------------------------------------------
-
 export const CONTRACT_ADDRESSES = {
 	masjidProtocol: (process.env.NEXT_PUBLIC_MASJID_PROTOCOL_ADDRESS ??
 		"0x0000000000000000000000000000000000000000") as Address,
@@ -15,17 +11,12 @@ export const CONTRACT_ADDRESSES = {
 		"0x0000000000000000000000000000000000000000") as Address,
 } as const;
 
-// ---------------------------------------------------------------------------
-// MasjidProtocol ABI
-// ---------------------------------------------------------------------------
-
 export const MASJID_PROTOCOL_ABI = [
 	{
 		type: "constructor",
 		inputs: [{ name: "verifierRegistry_", type: "address" }],
 		stateMutability: "nonpayable",
 	},
-	// ── View ──────────────────────────────────────────────────────────────────
 	{
 		type: "function",
 		name: "FACTORY",
@@ -42,7 +33,7 @@ export const MASJID_PROTOCOL_ABI = [
 	},
 	{
 		type: "function",
-		name: "owner",
+		name: "admin",
 		inputs: [],
 		outputs: [{ name: "", type: "address" }],
 		stateMutability: "view",
@@ -65,16 +56,17 @@ export const MASJID_PROTOCOL_ABI = [
 				components: [
 					{ name: "proposer", type: "address" },
 					{ name: "masjidAdmin", type: "address" },
-					{ name: "vault", type: "address" },
 					{ name: "instance", type: "address" },
 					{ name: "stablecoin", type: "address" },
-					{ name: "masjidName", type: "string" },
-					{ name: "metadataUri", type: "string" },
+					{ name: "nameHash", type: "bytes32" },
+					{ name: "cashOutThreshold", type: "uint256" },
 					{ name: "attestYes", type: "uint32" },
 					{ name: "attestNo", type: "uint32" },
 					{ name: "status", type: "uint8" },
 					{ name: "createdAt", type: "uint64" },
 					{ name: "updatedAt", type: "uint64" },
+					{ name: "masjidName", type: "string" },
+					{ name: "metadataUri", type: "string" },
 				],
 			},
 		],
@@ -82,22 +74,16 @@ export const MASJID_PROTOCOL_ABI = [
 	},
 	{
 		type: "function",
-		name: "masjidById",
-		inputs: [{ name: "", type: "bytes32" }],
-		outputs: [
-			{ name: "proposer", type: "address" },
-			{ name: "masjidAdmin", type: "address" },
-			{ name: "vault", type: "address" },
-			{ name: "instance", type: "address" },
-			{ name: "stablecoin", type: "address" },
-			{ name: "masjidName", type: "string" },
-			{ name: "metadataUri", type: "string" },
-			{ name: "attestYes", type: "uint32" },
-			{ name: "attestNo", type: "uint32" },
-			{ name: "status", type: "uint8" },
-			{ name: "createdAt", type: "uint64" },
-			{ name: "updatedAt", type: "uint64" },
-		],
+		name: "getBoardMembers",
+		inputs: [{ name: "masjidId", type: "bytes32" }],
+		outputs: [{ name: "", type: "address[]" }],
+		stateMutability: "view",
+	},
+	{
+		type: "function",
+		name: "getAttesters",
+		inputs: [{ name: "masjidId", type: "bytes32" }],
+		outputs: [{ name: "", type: "address[]" }],
 		stateMutability: "view",
 	},
 	{
@@ -117,7 +103,6 @@ export const MASJID_PROTOCOL_ABI = [
 		outputs: [{ name: "", type: "bytes32" }],
 		stateMutability: "view",
 	},
-	// ── Write ─────────────────────────────────────────────────────────────────
 	{
 		type: "function",
 		name: "register",
@@ -125,13 +110,9 @@ export const MASJID_PROTOCOL_ABI = [
 			{ name: "masjidName", type: "string" },
 			{ name: "metadataUri", type: "string" },
 			{ name: "stablecoin", type: "address" },
-			{ name: "initialBoardMembers", type: "address[]" },
-			{ name: "cashOutThreshold", type: "uint256" },
+			{ name: "boardMembers", type: "address[]" },
 		],
-		outputs: [
-			{ name: "masjidId", type: "bytes32" },
-			{ name: "instance", type: "address" },
-		],
+		outputs: [{ name: "masjidId", type: "bytes32" }],
 		stateMutability: "nonpayable",
 	},
 	{
@@ -140,7 +121,6 @@ export const MASJID_PROTOCOL_ABI = [
 		inputs: [
 			{ name: "masjidId", type: "bytes32" },
 			{ name: "support", type: "bool" },
-			{ name: "note", type: "string" },
 		],
 		outputs: [],
 		stateMutability: "nonpayable",
@@ -152,13 +132,6 @@ export const MASJID_PROTOCOL_ABI = [
 			{ name: "masjidId", type: "bytes32" },
 			{ name: "newAdmin", type: "address" },
 		],
-		outputs: [],
-		stateMutability: "nonpayable",
-	},
-	{
-		type: "function",
-		name: "transferOwnership",
-		inputs: [{ name: "newOwner", type: "address" }],
 		outputs: [],
 		stateMutability: "nonpayable",
 	},
@@ -176,7 +149,13 @@ export const MASJID_PROTOCOL_ABI = [
 		outputs: [],
 		stateMutability: "nonpayable",
 	},
-	// ── Events ────────────────────────────────────────────────────────────────
+	{
+		type: "function",
+		name: "unflag",
+		inputs: [{ name: "masjidId", type: "bytes32" }],
+		outputs: [],
+		stateMutability: "nonpayable",
+	},
 	{
 		type: "event",
 		name: "MasjidRegistered",
@@ -184,10 +163,10 @@ export const MASJID_PROTOCOL_ABI = [
 			{ name: "masjidId", type: "bytes32", indexed: true },
 			{ name: "nameHash", type: "bytes32", indexed: true },
 			{ name: "proposer", type: "address", indexed: true },
-			{ name: "masjidAdmin", type: "address", indexed: false },
-			{ name: "vault", type: "address", indexed: false },
+			{ name: "masjidName", type: "string", indexed: false },
+			{ name: "metadataUri", type: "string", indexed: false },
 			{ name: "stablecoin", type: "address", indexed: false },
-			{ name: "instance", type: "address", indexed: false },
+			{ name: "boardMembers", type: "address[]", indexed: false },
 		],
 		anonymous: false,
 	},
@@ -198,7 +177,29 @@ export const MASJID_PROTOCOL_ABI = [
 			{ name: "masjidId", type: "bytes32", indexed: true },
 			{ name: "verifier", type: "address", indexed: true },
 			{ name: "support", type: "bool", indexed: false },
-			{ name: "noteHash", type: "bytes32", indexed: false },
+			{ name: "yesCount", type: "uint32", indexed: false },
+			{ name: "noCount", type: "uint32", indexed: false },
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "MasjidRejected",
+		inputs: [
+			{ name: "masjidId", type: "bytes32", indexed: true },
+			{ name: "attesters", type: "address[]", indexed: false },
+			{ name: "yesCount", type: "uint32", indexed: false },
+			{ name: "noCount", type: "uint32", indexed: false },
+		],
+		anonymous: false,
+	},
+	{
+		type: "event",
+		name: "MasjidVerified",
+		inputs: [
+			{ name: "masjidId", type: "bytes32", indexed: true },
+			{ name: "instance", type: "address", indexed: true },
+			{ name: "attesters", type: "address[]", indexed: false },
 			{ name: "yesCount", type: "uint32", indexed: false },
 			{ name: "noCount", type: "uint32", indexed: false },
 		],
@@ -226,24 +227,13 @@ export const MASJID_PROTOCOL_ABI = [
 	},
 	{
 		type: "event",
-		name: "OwnershipTransferred",
-		inputs: [
-			{ name: "previousOwner", type: "address", indexed: true },
-			{ name: "newOwner", type: "address", indexed: true },
-		],
-		anonymous: false,
-	},
-	{
-		type: "event",
 		name: "FactoryDeployed",
 		inputs: [{ name: "factory", type: "address", indexed: true }],
 		anonymous: false,
 	},
-	// ── Errors ────────────────────────────────────────────────────────────────
-	{ type: "error", name: "NotOwner", inputs: [] },
+	{ type: "error", name: "NotAdmin", inputs: [] },
 	{ type: "error", name: "NotMasjidAdmin", inputs: [] },
 	{ type: "error", name: "NotAuthorizedVerifier", inputs: [] },
-	{ type: "error", name: "InvalidThreshold", inputs: [] },
 	{ type: "error", name: "ZeroAddress", inputs: [] },
 	{ type: "error", name: "EmptyName", inputs: [] },
 	{ type: "error", name: "InvalidStatus", inputs: [] },
@@ -252,12 +242,7 @@ export const MASJID_PROTOCOL_ABI = [
 	{ type: "error", name: "MasjidNotFound", inputs: [] },
 ] as const;
 
-// ---------------------------------------------------------------------------
-// MasjidInstance ABI  (dynamic address — resolved per masjid)
-// ---------------------------------------------------------------------------
-
 export const MASJID_INSTANCE_ABI = [
-	// ── Role constants ────────────────────────────────────────────────────────
 	{
 		type: "function",
 		name: "PROTOCOL_ROLE",
@@ -279,7 +264,6 @@ export const MASJID_INSTANCE_ABI = [
 		outputs: [{ name: "", type: "bytes32" }],
 		stateMutability: "view",
 	},
-	// ── AccessControl ─────────────────────────────────────────────────────────
 	{
 		type: "function",
 		name: "hasRole",
@@ -297,7 +281,6 @@ export const MASJID_INSTANCE_ABI = [
 		outputs: [{ name: "", type: "bytes32" }],
 		stateMutability: "view",
 	},
-	// ── View ──────────────────────────────────────────────────────────────────
 	{
 		type: "function",
 		name: "MASJID_ID",
@@ -423,7 +406,6 @@ export const MASJID_INSTANCE_ABI = [
 		],
 		stateMutability: "view",
 	},
-	// ── Write ─────────────────────────────────────────────────────────────────
 	{
 		type: "function",
 		name: "cashIn",
@@ -484,7 +466,6 @@ export const MASJID_INSTANCE_ABI = [
 		outputs: [],
 		stateMutability: "nonpayable",
 	},
-	// ── Events ────────────────────────────────────────────────────────────────
 	{
 		type: "event",
 		name: "CashIn",
@@ -565,7 +546,6 @@ export const MASJID_INSTANCE_ABI = [
 		],
 		anonymous: false,
 	},
-	// ── Errors ────────────────────────────────────────────────────────────────
 	{ type: "error", name: "OnlyProtocol", inputs: [] },
 	{ type: "error", name: "ZeroAddress", inputs: [] },
 	{ type: "error", name: "AmountZero", inputs: [] },
@@ -581,10 +561,6 @@ export const MASJID_INSTANCE_ABI = [
 	{ type: "error", name: "CashOutIsCanceled", inputs: [] },
 	{ type: "error", name: "CashOutThresholdNotReached", inputs: [] },
 ] as const;
-
-// ---------------------------------------------------------------------------
-// ERC-20 minimal ABI  (approve + allowance needed for cashIn flow)
-// ---------------------------------------------------------------------------
 
 export const ERC20_ABI = [
 	{
@@ -630,10 +606,6 @@ export const ERC20_ABI = [
 	},
 ] as const;
 
-// ---------------------------------------------------------------------------
-// VerifierRegistry ABI
-// ---------------------------------------------------------------------------
-
 export const VERIFIER_REGISTRY_ABI = [
 	{
 		type: "function",
@@ -672,13 +644,6 @@ export const VERIFIER_REGISTRY_ABI = [
 	},
 	{
 		type: "function",
-		name: "canAttest",
-		inputs: [{ name: "account", type: "address" }],
-		outputs: [{ name: "", type: "bool" }],
-		stateMutability: "view",
-	},
-	{
-		type: "function",
 		name: "verifierInfo",
 		inputs: [{ name: "account", type: "address" }],
 		outputs: [
@@ -706,13 +671,6 @@ export const VERIFIER_REGISTRY_ABI = [
 	},
 	{
 		type: "function",
-		name: "setQuorum",
-		inputs: [{ name: "newQuorum", type: "uint256" }],
-		outputs: [],
-		stateMutability: "nonpayable",
-	},
-	{
-		type: "function",
 		name: "transferAuthority",
 		inputs: [{ name: "newAuthority", type: "address" }],
 		outputs: [],
@@ -735,15 +693,6 @@ export const VERIFIER_REGISTRY_ABI = [
 	},
 	{
 		type: "event",
-		name: "QuorumUpdated",
-		inputs: [
-			{ name: "previousQuorum", type: "uint256", indexed: false },
-			{ name: "newQuorum", type: "uint256", indexed: false },
-		],
-		anonymous: false,
-	},
-	{
-		type: "event",
 		name: "AuthorityTransferred",
 		inputs: [
 			{ name: "previousAuthority", type: "address", indexed: true },
@@ -755,46 +704,38 @@ export const VERIFIER_REGISTRY_ABI = [
 	{ type: "error", name: "ZeroAddress", inputs: [] },
 	{ type: "error", name: "AlreadyVerifier", inputs: [] },
 	{ type: "error", name: "NotVerifier", inputs: [] },
-	{ type: "error", name: "InvalidQuorum", inputs: [] },
-	{ type: "error", name: "QuorumExceedsVerifierCount", inputs: [] },
 ] as const;
 
-// ---------------------------------------------------------------------------
-// Enums (mirrors Solidity)
-// ---------------------------------------------------------------------------
-
-export enum RegistrationStatus {
+export enum MasjidStatus {
 	None = 0,
 	Pending = 1,
-	Verified = 2,
-	Flagged = 3,
-	Revoked = 4,
+	Rejected = 2,
+	Verified = 3,
+	Flagged = 4,
+	Revoked = 5,
 }
 
-export enum VerificationStatus {
+export enum InstanceVerificationStatus {
 	Unverified = 0,
 	Verified = 1,
 	Flagged = 2,
 	Revoked = 3,
 }
 
-// ---------------------------------------------------------------------------
-// TypeScript types (mirrors Solidity structs)
-// ---------------------------------------------------------------------------
-
 export type MasjidRegistration = {
 	proposer: Address;
 	masjidAdmin: Address;
-	vault: Address;
 	instance: Address;
 	stablecoin: Address;
-	masjidName: string;
-	metadataUri: string;
+	nameHash: `0x${string}`;
+	cashOutThreshold: bigint;
 	attestYes: number;
 	attestNo: number;
-	status: RegistrationStatus;
+	status: MasjidStatus;
 	createdAt: bigint;
 	updatedAt: bigint;
+	masjidName: string;
+	metadataUri: string;
 };
 
 export type CashOutRequest = {

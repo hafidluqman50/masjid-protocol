@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-type CashOutApproval struct {
+type CashOutVote struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	InstanceAddr string    `gorm:"column:instance_addr" json:"instance_addr"`
 	RequestID    int64     `gorm:"column:request_id" json:"request_id"`
@@ -13,6 +13,6 @@ type CashOutApproval struct {
 	ApprovedAt   time.Time `gorm:"column:approved_at" json:"approved_at"`
 }
 
-func (CashOutApproval) TableName() string {
-	return "cash_out_approvals"
+func (CashOutVote) TableName() string {
+	return "cash_out_votes"
 }

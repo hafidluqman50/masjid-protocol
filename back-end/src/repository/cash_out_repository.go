@@ -53,7 +53,7 @@ func (r *CashOutRepository) UpsertRequest(ctx context.Context, req *model.CashOu
 		Create(req).Error
 }
 
-func (r *CashOutRepository) UpsertApproval(ctx context.Context, approval *model.CashOutApproval) error {
+func (r *CashOutRepository) UpsertVote(ctx context.Context, vote *model.CashOutVote) error {
 	return r.DB.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "instance_addr"}, {Name: "request_id"}, {Name: "approver"}},
@@ -61,7 +61,7 @@ func (r *CashOutRepository) UpsertApproval(ctx context.Context, approval *model.
 				"approvals", "block_number", "tx_hash", "approved_at",
 			}),
 		}).
-		Create(approval).Error
+		Create(vote).Error
 }
 
 func (r *CashOutRepository) MarkExecuted(ctx context.Context, instanceAddr string, requestID int64, executor string, settledAt time.Time) error {

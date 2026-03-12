@@ -1,26 +1,22 @@
 package request
 
-// RegistrationEvent mirrors the MasjidRegistered on-chain event.
-type RegistrationEvent struct {
-	MasjidID     string `json:"masjid_id" binding:"required"`
-	NameHash     string `json:"name_hash" binding:"required"`
-	MasjidName   string `json:"masjid_name" binding:"required"`
-	Proposer     string `json:"proposer" binding:"required"`
-	MasjidAdmin  string `json:"masjid_admin" binding:"required"`
-	InstanceAddr string `json:"instance_addr" binding:"required"`
-	VaultAddr    string `json:"vault_addr" binding:"required"`
-	Stablecoin   string `json:"stablecoin" binding:"required"`
-	BlockNumber  int64  `json:"block_number" binding:"required"`
-	TxHash       string `json:"tx_hash" binding:"required"`
-	Timestamp    int64  `json:"timestamp" binding:"required"`
+type MasjidRegisteredEvent struct {
+	MasjidID         string `json:"masjid_id" binding:"required"`
+	NameHash         string `json:"name_hash" binding:"required"`
+	Proposer         string `json:"proposer" binding:"required"`
+	MasjidName       string `json:"masjid_name" binding:"required"`
+	MetadataUri      string `json:"metadata_uri"`
+	Stablecoin       string `json:"stablecoin" binding:"required"`
+	CashOutThreshold int64  `json:"cash_out_threshold"`
+	BlockNumber      int64  `json:"block_number" binding:"required"`
+	TxHash           string `json:"tx_hash" binding:"required"`
+	Timestamp        int64  `json:"timestamp" binding:"required"`
 }
 
-// AttestEvent mirrors the Attested on-chain event.
-type AttestEvent struct {
+type MasjidAttestedEvent struct {
 	MasjidID    string `json:"masjid_id" binding:"required"`
 	Verifier    string `json:"verifier" binding:"required"`
 	Support     bool   `json:"support"`
-	NoteHash    string `json:"note_hash" binding:"required"`
 	YesCount    int    `json:"yes_count"`
 	NoCount     int    `json:"no_count"`
 	BlockNumber int64  `json:"block_number" binding:"required"`
@@ -28,16 +24,33 @@ type AttestEvent struct {
 	Timestamp   int64  `json:"timestamp" binding:"required"`
 }
 
-// StatusEvent mirrors Verified / Revoked / Flagged on-chain events.
-type StatusEvent struct {
+type MasjidRejectedEvent struct {
 	MasjidID    string `json:"masjid_id" binding:"required"`
-	Status      string `json:"status" binding:"required"` // verified | revoked | flagged
+	YesCount    int    `json:"yes_count"`
+	NoCount     int    `json:"no_count"`
 	BlockNumber int64  `json:"block_number" binding:"required"`
 	TxHash      string `json:"tx_hash" binding:"required"`
 	Timestamp   int64  `json:"timestamp" binding:"required"`
 }
 
-// CashInEvent mirrors the Donated on-chain event.
+type MasjidVerifiedEvent struct {
+	MasjidID     string `json:"masjid_id" binding:"required"`
+	InstanceAddr string `json:"instance_addr" binding:"required"`
+	YesCount     int    `json:"yes_count"`
+	NoCount      int    `json:"no_count"`
+	BlockNumber  int64  `json:"block_number" binding:"required"`
+	TxHash       string `json:"tx_hash" binding:"required"`
+	Timestamp    int64  `json:"timestamp" binding:"required"`
+}
+
+type StatusEvent struct {
+	MasjidID    string `json:"masjid_id" binding:"required"`
+	Status      string `json:"status" binding:"required"`
+	BlockNumber int64  `json:"block_number" binding:"required"`
+	TxHash      string `json:"tx_hash" binding:"required"`
+	Timestamp   int64  `json:"timestamp" binding:"required"`
+}
+
 type CashInEvent struct {
 	InstanceAddr string `json:"instance_addr" binding:"required"`
 	Donor        string `json:"donor" binding:"required"`
@@ -49,7 +62,6 @@ type CashInEvent struct {
 	Timestamp    int64  `json:"timestamp" binding:"required"`
 }
 
-// CashOutProposedEvent mirrors the CashOutProposed on-chain event.
 type CashOutProposedEvent struct {
 	InstanceAddr string `json:"instance_addr" binding:"required"`
 	RequestID    int64  `json:"request_id" binding:"required"`
@@ -63,7 +75,6 @@ type CashOutProposedEvent struct {
 	Timestamp    int64  `json:"timestamp" binding:"required"`
 }
 
-// CashOutApprovedEvent mirrors the CashOutApproved on-chain event.
 type CashOutApprovedEvent struct {
 	InstanceAddr string `json:"instance_addr" binding:"required"`
 	RequestID    int64  `json:"request_id" binding:"required"`
@@ -74,7 +85,6 @@ type CashOutApprovedEvent struct {
 	Timestamp    int64  `json:"timestamp" binding:"required"`
 }
 
-// CashOutExecutedEvent mirrors the CashOutExecuted on-chain event.
 type CashOutExecutedEvent struct {
 	InstanceAddr string `json:"instance_addr" binding:"required"`
 	RequestID    int64  `json:"request_id" binding:"required"`
@@ -84,7 +94,6 @@ type CashOutExecutedEvent struct {
 	Timestamp    int64  `json:"timestamp" binding:"required"`
 }
 
-// CashOutCanceledEvent mirrors the CashOutCanceled on-chain event.
 type CashOutCanceledEvent struct {
 	InstanceAddr string `json:"instance_addr" binding:"required"`
 	RequestID    int64  `json:"request_id" binding:"required"`
@@ -94,7 +103,6 @@ type CashOutCanceledEvent struct {
 	Timestamp    int64  `json:"timestamp" binding:"required"`
 }
 
-// VerifierAddedEvent mirrors the VerifierAdded on-chain event.
 type VerifierAddedEvent struct {
 	Address     string `json:"address" binding:"required"`
 	Label       string `json:"label"`
@@ -103,7 +111,6 @@ type VerifierAddedEvent struct {
 	Timestamp   int64  `json:"timestamp" binding:"required"`
 }
 
-// VerifierRemovedEvent mirrors the VerifierRemoved on-chain event.
 type VerifierRemovedEvent struct {
 	Address     string `json:"address" binding:"required"`
 	BlockNumber int64  `json:"block_number" binding:"required"`
@@ -111,7 +118,6 @@ type VerifierRemovedEvent struct {
 	Timestamp   int64  `json:"timestamp" binding:"required"`
 }
 
-// BoardMemberUpdatedEvent mirrors the BoardMemberUpdated on-chain event from MasjidInstance.
 type BoardMemberUpdatedEvent struct {
 	InstanceAddr string `json:"instance_addr" binding:"required"`
 	Member       string `json:"member" binding:"required"`
@@ -121,13 +127,11 @@ type BoardMemberUpdatedEvent struct {
 	Timestamp    int64  `json:"timestamp" binding:"required"`
 }
 
-// CheckpointUpdate is used to advance the indexer cursor.
 type CheckpointUpdate struct {
 	ContractAddr string `json:"contract_addr" binding:"required"`
 	LastBlock    int64  `json:"last_block" binding:"required"`
 }
 
-// VerifierLabelUpdate is used by admin to set/change a verifier's human label.
 type VerifierLabelUpdate struct {
 	Label string `json:"label" binding:"required"`
 }

@@ -15,42 +15,42 @@ type MasjidRepository struct {
 }
 
 type MasjidSummary struct {
-	model.MasjidRegistration
+	model.Masjid
 	TotalDonors     int    `json:"total_donors"`
 	TotalDonated    string `json:"total_donated"`
 	LatestBalance   string `json:"latest_balance"`
 	PendingCashouts int    `json:"pending_cashouts"`
 }
 
-func (r *MasjidRepository) FindByID(ctx context.Context, masjidID string) (model.MasjidRegistration, bool, error) {
-	var reg model.MasjidRegistration
-	err := r.DB.WithContext(ctx).Where("masjid_id = ?", masjidID).First(&reg).Error
+func (r *MasjidRepository) FindByID(ctx context.Context, masjidID string) (model.Masjid, bool, error) {
+	var m model.Masjid
+	err := r.DB.WithContext(ctx).Where("masjid_id = ?", masjidID).First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return reg, false, nil
+		return m, false, nil
 	}
-	return reg, err == nil, err
+	return m, err == nil, err
 }
 
-func (r *MasjidRepository) FindByAdmin(ctx context.Context, adminAddr string) (model.MasjidRegistration, bool, error) {
-	var reg model.MasjidRegistration
+func (r *MasjidRepository) FindByAdmin(ctx context.Context, adminAddr string) (model.Masjid, bool, error) {
+	var m model.Masjid
 	err := r.DB.WithContext(ctx).
 		Where("LOWER(masjid_admin) = LOWER(?)", adminAddr).
-		First(&reg).Error
+		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return reg, false, nil
+		return m, false, nil
 	}
-	return reg, err == nil, err
+	return m, err == nil, err
 }
 
-func (r *MasjidRepository) FindByInstance(ctx context.Context, instanceAddr string) (model.MasjidRegistration, bool, error) {
-	var reg model.MasjidRegistration
+func (r *MasjidRepository) FindByInstance(ctx context.Context, instanceAddr string) (model.Masjid, bool, error) {
+	var m model.Masjid
 	err := r.DB.WithContext(ctx).
 		Where("LOWER(instance_addr) = LOWER(?)", instanceAddr).
-		First(&reg).Error
+		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return reg, false, nil
+		return m, false, nil
 	}
-	return reg, err == nil, err
+	return m, err == nil, err
 }
 
 func (r *MasjidRepository) List(ctx context.Context, status string) ([]MasjidSummary, error) {
@@ -82,18 +82,18 @@ func (r *MasjidRepository) GetDonationStats(ctx context.Context, masjidID string
 	return result, err
 }
 
-func (r *MasjidRepository) Upsert(ctx context.Context, reg *model.MasjidRegistration) error {
+func (r *MasjidRepository) Upsert(ctx context.Context, m *model.Masjid) error {
 	return r.DB.WithContext(ctx).
 		Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "masjid_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"name_hash", "masjid_name", "metadata_uri", "masjid_admin",
-				"instance_addr", "vault_addr", "stablecoin", "status",
-				"attest_yes", "attest_no", "block_number", "tx_hash",
+				"instance_addr", "vault_addr", "stablecoin", "cash_out_threshold",
+				"status", "attest_yes", "attest_no", "block_number", "tx_hash",
 				"registered_at", "verified_at", "updated_at",
 			}),
 		}).
-		Create(reg).Error
+		Create(m).Error
 }
 
 func (r *MasjidRepository) UpdateStatus(ctx context.Context, masjidID string, status string, verifiedAt *time.Time) error {
@@ -105,14 +105,26 @@ func (r *MasjidRepository) UpdateStatus(ctx context.Context, masjidID string, st
 		updates["verified_at"] = verifiedAt
 	}
 	return r.DB.WithContext(ctx).
-		Model(&model.MasjidRegistration{}).
+		Model(&model.Masjid{}).
 		Where("masjid_id = ?", masjidID).
 		Updates(updates).Error
 }
 
+func (r *MasjidRepository) UpdateVerified(ctx context.Context, masjidID string, instanceAddr string, verifiedAt time.Time) error {
+	return r.DB.WithContext(ctx).
+		Model(&model.Masjid{}).
+		Where("masjid_id = ?", masjidID).
+		Updates(map[string]interface{}{
+			"instance_addr": instanceAddr,
+			"status":        "verified",
+			"verified_at":   verifiedAt,
+			"updated_at":    verifiedAt,
+		}).Error
+}
+
 func (r *MasjidRepository) UpdateAttestCounts(ctx context.Context, masjidID string, yesCount, noCount int) error {
 	return r.DB.WithContext(ctx).
-		Model(&model.MasjidRegistration{}).
+		Model(&model.Masjid{}).
 		Where("masjid_id = ?", masjidID).
 		Updates(map[string]interface{}{
 			"attest_yes": yesCount,
@@ -121,19 +133,19 @@ func (r *MasjidRepository) UpdateAttestCounts(ctx context.Context, masjidID stri
 		}).Error
 }
 
-func (r *MasjidRepository) Create(ctx context.Context, reg *model.MasjidRegistration) error {
-	return r.DB.WithContext(ctx).Create(reg).Error
+func (r *MasjidRepository) Create(ctx context.Context, m *model.Masjid) error {
+	return r.DB.WithContext(ctx).Create(m).Error
 }
 
-func (r *MasjidRepository) Update(ctx context.Context, reg *model.MasjidRegistration) error {
-	return r.DB.WithContext(ctx).Save(reg).Error
+func (r *MasjidRepository) Update(ctx context.Context, m *model.Masjid) error {
+	return r.DB.WithContext(ctx).Save(m).Error
 }
 
-// ListInstanceAddresses returns all known instance addresses (lowercase) for indexer use.
 func (r *MasjidRepository) ListInstanceAddresses(ctx context.Context) ([]string, error) {
 	var addrs []string
 	err := r.DB.WithContext(ctx).
-		Model(&model.MasjidRegistration{}).
+		Model(&model.Masjid{}).
+		Where("instance_addr IS NOT NULL").
 		Pluck("instance_addr", &addrs).Error
 	return addrs, err
 }

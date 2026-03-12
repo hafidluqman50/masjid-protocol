@@ -1,7 +1,6 @@
 import { BaseError, ContractFunctionRevertedError } from "viem";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  // MasjidProtocol
   NotOwner: "Hanya pemilik kontrak yang dapat melakukan aksi ini.",
   NotMasjidAdmin: "Anda bukan admin masjid ini.",
   NotAuthorizedVerifier: "Anda bukan verifikator resmi.",
@@ -12,7 +11,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   AlreadyAttested: "Masjid ini sudah pernah diattestasi oleh Anda.",
   AlreadyRegisteredName: "Nama masjid sudah terdaftar.",
   MasjidNotFound: "Masjid tidak ditemukan.",
-  // MasjidInstance
   OnlyProtocol: "Hanya protokol yang dapat memanggil fungsi ini.",
   AmountZero: "Jumlah harus lebih dari nol.",
   TransferFailed: "Transfer token gagal. Periksa saldo dan allowance.",
@@ -24,7 +22,6 @@ const ERROR_MESSAGES: Record<string, string> = {
   CashOutAlreadyExecuted: "Permintaan pencairan sudah dieksekusi.",
   CashOutIsCanceled: "Permintaan pencairan sudah dibatalkan.",
   CashOutThresholdNotReached: "Belum cukup persetujuan untuk mengeksekusi pencairan.",
-  // VerifierRegistry
   NotAuthority: "Hanya authority yang dapat melakukan aksi ini.",
   AlreadyVerifier: "Alamat ini sudah terdaftar sebagai verifikator.",
   NotVerifier: "Alamat ini bukan verifikator.",
@@ -34,12 +31,10 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 export function mapContractError(err: unknown): string {
   if (err instanceof BaseError) {
-    // User rejected in wallet
     if (err.message.includes("User rejected") || err.message.includes("user rejected")) {
       return "Transaksi dibatalkan di wallet.";
     }
 
-    // Viem ContractFunctionRevertedError — has the custom error name
     const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revert instanceof ContractFunctionRevertedError) {
       const name = revert.data?.errorName ?? revert.reason ?? "";
@@ -47,7 +42,6 @@ export function mapContractError(err: unknown): string {
       if (name) return `Kontrak menolak transaksi: ${name}`;
     }
 
-    // Fallback to short message
     return err.shortMessage ?? err.message;
   }
 

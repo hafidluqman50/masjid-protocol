@@ -14,7 +14,6 @@ type AdminHandler struct {
 	CashOut  *service.CashOutService
 }
 
-// GET /admin/masjids
 func (h *AdminHandler) ListMasjids(c *gin.Context) {
 	status := c.Query("status")
 	list, err := h.Masjid.List(c.Request.Context(), status)
@@ -25,7 +24,6 @@ func (h *AdminHandler) ListMasjids(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
-// GET /admin/masjids/pending
 func (h *AdminHandler) ListPendingMasjids(c *gin.Context) {
 	list, err := h.Masjid.ListPending(c.Request.Context())
 	if err != nil {
@@ -35,7 +33,6 @@ func (h *AdminHandler) ListPendingMasjids(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": list})
 }
 
-// GET /admin/masjids/:id
 func (h *AdminHandler) GetMasjid(c *gin.Context) {
 	id := c.Param("id")
 	reg, ok, err := h.Masjid.GetByID(c.Request.Context(), id)
@@ -50,7 +47,6 @@ func (h *AdminHandler) GetMasjid(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": reg})
 }
 
-// GET /admin/masjids/:id/attests
 func (h *AdminHandler) GetMasjidAttests(c *gin.Context) {
 	id := c.Param("id")
 	attests, err := h.Masjid.ListAttests(c.Request.Context(), id)
@@ -61,7 +57,6 @@ func (h *AdminHandler) GetMasjidAttests(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": attests})
 }
 
-// GET /admin/verifiers
 func (h *AdminHandler) ListVerifiers(c *gin.Context) {
 	verifiers, err := h.Verifier.List(c.Request.Context())
 	if err != nil {
@@ -71,7 +66,6 @@ func (h *AdminHandler) ListVerifiers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": verifiers})
 }
 
-// PATCH /admin/verifiers/:address/label
 func (h *AdminHandler) UpdateVerifierLabel(c *gin.Context) {
 	address := c.Param("address")
 	var body request.VerifierLabelUpdate
@@ -86,7 +80,6 @@ func (h *AdminHandler) UpdateVerifierLabel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// GET /admin/cashouts/pending
 func (h *AdminHandler) ListPendingCashouts(c *gin.Context) {
 	list, err := h.CashOut.ListPending(c.Request.Context())
 	if err != nil {

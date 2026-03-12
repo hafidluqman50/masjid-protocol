@@ -9,21 +9,18 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-// eventTopic returns keccak256("EventSig(types...)") as 0x-prefixed hex.
 func eventTopic(sig string) string {
 	h := sha3.NewLegacyKeccak256()
 	h.Write([]byte(sig))
 	return "0x" + hex.EncodeToString(h.Sum(nil))
 }
 
-// fnSelector returns the first 4 bytes of keccak256(sig) as 0x-prefixed hex.
 func fnSelector(sig string) string {
 	h := sha3.NewLegacyKeccak256()
 	h.Write([]byte(sig))
 	return "0x" + hex.EncodeToString(h.Sum(nil)[:4])
 }
 
-// topicToAddr extracts a checksummed-lower address from a 32-byte topic.
 func topicToAddr(topic string) string {
 	t := strings.TrimPrefix(topic, "0x")
 	if len(t) < 40 {
@@ -32,7 +29,6 @@ func topicToAddr(topic string) string {
 	return "0x" + strings.ToLower(t[len(t)-40:])
 }
 
-// topicToBytes32 returns the topic as a 0x-prefixed 32-byte hex string.
 func topicToBytes32(topic string) string {
 	t := strings.TrimPrefix(topic, "0x")
 	if len(t) < 64 {
@@ -41,7 +37,6 @@ func topicToBytes32(topic string) string {
 	return "0x" + strings.ToLower(t)
 }
 
-// topicToBigInt parses a 32-byte topic as a *big.Int.
 func topicToBigInt(topic string) *big.Int {
 	t := strings.TrimPrefix(topic, "0x")
 	n, _ := new(big.Int).SetString(t, 16)
@@ -51,8 +46,6 @@ func topicToBigInt(topic string) *big.Int {
 	return n
 }
 
-// slotHex returns the idx-th 32-byte (64 hex char) slot from ABI-encoded data.
-// data must be WITHOUT the 0x prefix.
 func slotHex(data string, idx int) string {
 	start := idx * 64
 	end := start + 64
@@ -103,8 +96,6 @@ func slotToBytes32(data string, idx int) string {
 	return "0x" + strings.ToLower(slotHex(data, idx))
 }
 
-// decodeABIString decodes a Solidity string that is ABI-encoded at slotIdx
-// (slot contains the byte-offset to the length word).
 func decodeABIString(data string, slotIdx int) string {
 	offsetBytes := slotToInt(data, slotIdx)
 	lenSlot := offsetBytes / 32
@@ -124,13 +115,10 @@ func decodeABIString(data string, slotIdx int) string {
 	return string(b)
 }
 
-// decodeStringReturn decodes the return value of a solidity function
-// that returns a single `string` (ABI: offset word + length word + data).
 func decodeStringReturn(data string) string {
 	if len(data) < 128 {
 		return ""
 	}
-	// slot 0 = offset (should be 32 = 0x20)
 	length := slotToInt(data, 1)
 	if length == 0 {
 		return ""
@@ -153,4 +141,10 @@ func stripData(raw string) string {
 
 func uint64ToHex(n uint64) string {
 	return fmt.Sprintf("0x%x", n)
+}
+
+func decodeABIArrayLength(data string, slotIdx int) int {
+	offsetBytes := slotToInt(data, slotIdx)
+	lenSlot := offsetBytes / 32
+	return slotToInt(data, lenSlot)
 }

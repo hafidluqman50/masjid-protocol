@@ -1,5 +1,3 @@
-// IDRX token — pegged 1:1 to IDR, 2 decimal places
-// 100 IDRX raw = Rp 1,00
 const IDRX_DECIMALS = 2;
 
 export function formatIDRX(raw: bigint, decimals = IDRX_DECIMALS): string {

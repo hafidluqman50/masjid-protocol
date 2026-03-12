@@ -133,16 +133,13 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         status = VerificationStatus.Unverified;
         CREATED_AT = uint64(block.timestamp);
 
-        // Grant protocol role — no admin above it
         _grantRole(PROTOCOL_ROLE, protocol_);
         _setRoleAdmin(PROTOCOL_ROLE, PROTOCOL_ROLE);
 
-        // Grant admin role to masjidAdmin — admin manages board
         _grantRole(ADMIN_ROLE, masjidAdmin_);
         _setRoleAdmin(ADMIN_ROLE, PROTOCOL_ROLE);
         _setRoleAdmin(BOARD_ROLE, ADMIN_ROLE);
 
-        // Grant board role to initial members
         uint256 len = initialBoardMembers.length;
         for (uint256 i = 0; i < len; i++) {
             address member = initialBoardMembers[i];
@@ -170,7 +167,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         return IERC20(STABLECOIN).balanceOf(address(this));
     }
 
-    // Anyone can donate
     function cashIn(uint256 amount, bytes32 noteHash) external {
         if (amount == 0) revert AmountZero();
 
@@ -189,13 +185,12 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         );
     }
 
-    // Only admin can propose cash-out
     function proposeCashOut(
         address to,
         uint256 amount,
         bytes32 noteHash,
         uint64 expiresInSeconds
-    ) external onlyRole(ADMIN_ROLE) returns (uint256 requestId) {
+    ) external onlyRole(BOARD_ROLE) returns (uint256 requestId) {
         if (status != VerificationStatus.Verified) revert InvalidStatus();
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0) revert AmountZero();
@@ -228,7 +223,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         );
     }
 
-    // Only board members can approve
     function approveCashOut(uint256 requestId) external onlyRole(BOARD_ROLE) {
         if (status != VerificationStatus.Verified) revert InvalidStatus();
 
@@ -246,7 +240,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit CashOutApproved(requestId, msg.sender, request.approvals);
     }
 
-    // Only admin can execute
     function executeCashOut(uint256 requestId) external onlyRole(ADMIN_ROLE) {
         if (status != VerificationStatus.Verified) revert InvalidStatus();
 
@@ -266,7 +259,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit CashOutExecuted(requestId, msg.sender);
     }
 
-    // Only admin can cancel
     function cancelCashOut(uint256 requestId) external onlyRole(ADMIN_ROLE) {
         CashOutRequest storage request = cashOutById[requestId];
         if (request.createdAt == 0) revert CashOutNotFound();
@@ -278,7 +270,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit CashOutCanceled(requestId, msg.sender);
     }
 
-    // Only admin can manage board members
     function setBoardMember(
         address member,
         bool allowed
@@ -298,7 +289,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit BoardMemberUpdated(member, allowed);
     }
 
-    // Only admin can update threshold
     function setCashOutThreshold(
         uint256 newThreshold
     ) external onlyRole(ADMIN_ROLE) {
@@ -311,7 +301,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit CashOutThresholdUpdated(previous, newThreshold);
     }
 
-    // Only protocol can transfer admin
     function setAdmin(address newAdmin) external onlyRole(PROTOCOL_ROLE) {
         if (newAdmin == address(0)) revert ZeroAddress();
 
@@ -323,7 +312,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit AdminUpdated(previous, newAdmin);
     }
 
-    // Only protocol can update status
     function setStatus(
         VerificationStatus newStatus
     ) external onlyRole(PROTOCOL_ROLE) {
@@ -337,7 +325,6 @@ contract MasjidInstance is IMasjidInstance, AccessControl {
         emit StatusUpdated(previous, newStatus, uint64(block.timestamp));
     }
 
-    // Only protocol can update metadata
     function setMetadataUri(
         string calldata newMetadataUri
     ) external onlyRole(PROTOCOL_ROLE) {

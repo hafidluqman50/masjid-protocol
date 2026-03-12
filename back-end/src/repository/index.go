@@ -3,23 +3,25 @@ package repository
 import "gorm.io/gorm"
 
 type Registry struct {
-	Masjid         *MasjidRepository
+	Masjid        *MasjidRepository
 	VerifierAttest *VerifierAttestRepository
-	CashIn         *CashInRepository
-	CashOut        *CashOutRepository
-	Verifier       *VerifierRepository
-	Checkpoint     *CheckpointRepository
-	User           *UserRepository
+	CashIn        *CashInRepository
+	CashOut       *CashOutRepository
+	Verifier      *VerifierRepository
+	Checkpoint    *CheckpointRepository
+	User          *UserRepository
+	BoardMember   *BoardMemberRepository
 }
 
 func NewRegistry(db *gorm.DB) Registry {
 	return Registry{
-		Masjid:         &MasjidRepository{DB: db},
+		Masjid:        &MasjidRepository{DB: db},
 		VerifierAttest: &VerifierAttestRepository{DB: db},
-		CashIn:         &CashInRepository{DB: db},
-		CashOut:        &CashOutRepository{DB: db},
-		Verifier:       &VerifierRepository{DB: db},
-		Checkpoint:     &CheckpointRepository{DB: db},
-		User:           &UserRepository{DB: db},
+		CashIn:        &CashInRepository{DB: db},
+		CashOut:       &CashOutRepository{DB: db},
+		Verifier:      &VerifierRepository{DB: db},
+		Checkpoint:    &CheckpointRepository{DB: db},
+		User:          &UserRepository{DB: db},
+		BoardMember:   &BoardMemberRepository{DB: db},
 	}
 }

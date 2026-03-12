@@ -8,7 +8,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { simulateContract } from "@wagmi/core";
 import {
+  useConfig,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
@@ -37,93 +39,45 @@ import { apiFetch } from "@/lib/auth";
 import {
   CONTRACT_ADDRESSES,
   MASJID_PROTOCOL_ABI,
-  RegistrationStatus,
 } from "@/lib/contracts";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+import { mapContractError } from "@/lib/contractErrors";
 
 type QueueItem = {
   masjid_id: string;
   masjid_name: string;
   proposer: string;
-  yes_count: number;
-  no_count: number;
+  attest_yes: number;
+  attest_no: number;
   status: string;
   registered_at: string;
 };
 
 type HistoryItem = {
+  id: number;
   masjid_id: string;
-  masjid_name: string;
   support: boolean;
-  note_hash: string;
   yes_count: number;
   no_count: number;
   attested_at: string;
   tx_hash: string;
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function shortenAddr(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
 
-function statusBadge(status: string) {
-  switch (status) {
-    case "verified":
-      return (
-        <Badge className="bg-emerald-100 text-emerald-800 border-none">
-          Terverifikasi
-        </Badge>
-      );
-    case "pending":
-      return (
-        <Badge className="bg-amber-100 text-amber-800 border-none">
-          Menunggu
-        </Badge>
-      );
-    case "flagged":
-      return (
-        <Badge className="bg-red-100 text-red-800 border-none">
-          Bermasalah
-        </Badge>
-      );
-    default:
-      return (
-        <Badge className="bg-slate-100 text-slate-600 border-none">
-          {status}
-        </Badge>
-      );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Attestation queue panel
-// ---------------------------------------------------------------------------
-
 function AttestPanel() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [pendingMasjidId, setPendingMasjidId] = useState<string | null>(null);
 
-  const {
-    writeContract,
-    data: txHash,
-    isPending,
-    reset: resetWrite,
-    variables: writeVars,
-  } = useWriteContract();
+  const config = useConfig();
+  const { writeContractAsync, data: txHash, isPending, reset: resetWrite } = useWriteContract();
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
   });
-
-  const pendingMasjidId = writeVars?.args?.[0] as `0x${string}` | undefined;
 
   const loadQueue = () => {
     setLoading(true);
@@ -141,14 +95,21 @@ function AttestPanel() {
     loadQueue();
   }, [isSuccess]);
 
-  const handleAttest = (masjidId: `0x${string}`, support: boolean) => {
-    const note = noteMap[masjidId] ?? "";
-    writeContract({
-      address: CONTRACT_ADDRESSES.masjidProtocol,
-      abi: MASJID_PROTOCOL_ABI,
-      functionName: "attest",
-      args: [masjidId, support, note],
-    });
+  const handleAttest = async (masjidId: `0x${string}`, support: boolean) => {
+    setError(null);
+    setPendingMasjidId(masjidId);
+    try {
+      const { request } = await simulateContract(config, {
+        address: CONTRACT_ADDRESSES.masjidProtocol,
+        abi: MASJID_PROTOCOL_ABI,
+        functionName: "attest",
+        args: [masjidId, support],
+      });
+      await writeContractAsync(request);
+    } catch (err) {
+      setError(mapContractError(err));
+      setPendingMasjidId(null);
+    }
   };
 
   return (
@@ -166,14 +127,22 @@ function AttestPanel() {
             <button
               onClick={() => {
                 resetWrite();
+                setPendingMasjidId(null);
+                setError(null);
                 loadQueue();
               }}
               className="text-xs underline text-emerald-700 mt-1"
             >
-              Attest masjid lain
+              Attest permintaan lain
             </button>
           </div>
         </div>
+      )}
+
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
       )}
 
       {loading ? (
@@ -182,7 +151,7 @@ function AttestPanel() {
         </div>
       ) : queue.length === 0 ? (
         <p className="text-sm text-slate-400 text-center py-6">
-          Tidak ada masjid yang menunggu attestasi.
+          Tidak ada permintaan pendaftaran yang menunggu attestasi.
         </p>
       ) : (
         <div className="space-y-4">
@@ -196,7 +165,9 @@ function AttestPanel() {
                   <h3 className="font-semibold text-slate-900 text-lg">
                     {item.masjid_name}
                   </h3>
-                  {statusBadge(item.status)}
+                  <Badge className="bg-amber-100 text-amber-800 border-none">
+                    Menunggu
+                  </Badge>
                 </div>
                 <div className="flex items-center text-xs text-slate-500 gap-4 font-mono flex-wrap">
                   <span className="flex items-center gap-1">
@@ -204,7 +175,7 @@ function AttestPanel() {
                     {shortenAddr(item.masjid_id)}
                   </span>
                   <span>
-                    ✅ {item.yes_count} · ❌ {item.no_count}
+                    ✅ {item.attest_yes} · ❌ {item.attest_no}
                   </span>
                   <span>
                     {new Date(item.registered_at).toLocaleDateString("id-ID")}
@@ -212,59 +183,44 @@ function AttestPanel() {
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 min-w-[280px]">
-                <Input
-                  placeholder="Catatan (Opsional)..."
-                  value={noteMap[item.masjid_id] ?? ""}
-                  onChange={(e) =>
-                    setNoteMap((prev) => ({
-                      ...prev,
-                      [item.masjid_id]: e.target.value,
-                    }))
+              <div className="flex gap-2 min-w-[200px]">
+                <Button
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-9"
+                  onClick={() =>
+                    handleAttest(item.masjid_id as `0x${string}`, true)
                   }
                   disabled={isPending || isConfirming}
-                  className="text-sm border-slate-300 h-9 bg-white"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white h-9"
-                    onClick={() =>
-                      handleAttest(item.masjid_id as `0x${string}`, true)
-                    }
-                    disabled={isPending || isConfirming}
-                  >
-                    {isPending && pendingMasjidId === item.masjid_id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <CheckCircle2 className="w-4 h-4 mr-2" /> Setujui
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 h-9"
-                    onClick={() =>
-                      handleAttest(item.masjid_id as `0x${string}`, false)
-                    }
-                    disabled={isPending || isConfirming}
-                  >
-                    {isPending && pendingMasjidId === item.masjid_id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <XCircle className="w-4 h-4 mr-2" /> Tolak
-                      </>
-                    )}
-                  </Button>
-                </div>
+                >
+                  {isPending && pendingMasjidId === item.masjid_id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" /> Setujui
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 h-9"
+                  onClick={() =>
+                    handleAttest(item.masjid_id as `0x${string}`, false)
+                  }
+                  disabled={isPending || isConfirming}
+                >
+                  {isPending && pendingMasjidId === item.masjid_id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 mr-2" /> Tolak
+                    </>
+                  )}
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Manual attest by ID */}
       <ManualAttestForm />
     </div>
   );
@@ -272,21 +228,28 @@ function AttestPanel() {
 
 function ManualAttestForm() {
   const [masjidId, setMasjidId] = useState("");
-  const [note, setNote] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const { writeContract, data: txHash, isPending } = useWriteContract();
+  const config = useConfig();
+  const { writeContractAsync, data: txHash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash: txHash,
   });
 
-  const handleAttest = (support: boolean) => {
+  const handleAttest = async (support: boolean) => {
     if (!masjidId.startsWith("0x")) return;
-    writeContract({
-      address: CONTRACT_ADDRESSES.masjidProtocol,
-      abi: MASJID_PROTOCOL_ABI,
-      functionName: "attest",
-      args: [masjidId as `0x${string}`, support, note],
-    });
+    setError(null);
+    try {
+      const { request } = await simulateContract(config, {
+        address: CONTRACT_ADDRESSES.masjidProtocol,
+        abi: MASJID_PROTOCOL_ABI,
+        functionName: "attest",
+        args: [masjidId as `0x${string}`, support],
+      });
+      await writeContractAsync(request);
+    } catch (err) {
+      setError(mapContractError(err));
+    }
   };
 
   return (
@@ -299,6 +262,11 @@ function ManualAttestForm() {
           ✅ Berhasil dikirim
         </p>
       )}
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+          {error}
+        </p>
+      )}
       <div className="space-y-1.5">
         <Label className="text-slate-700 text-sm">Masjid ID</Label>
         <Input
@@ -307,16 +275,6 @@ function ManualAttestForm() {
           onChange={(e) => setMasjidId(e.target.value)}
           disabled={isPending || isConfirming}
           className="font-mono text-sm border-slate-300 focus-visible:ring-emerald-500"
-        />
-      </div>
-      <div className="space-y-1.5">
-        <Label className="text-slate-700 text-sm">Catatan (Opsional)</Label>
-        <Input
-          placeholder="Catatan attestasi..."
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          disabled={isPending || isConfirming}
-          className="border-slate-300 focus-visible:ring-emerald-500"
         />
       </div>
       <div className="flex gap-2">
@@ -345,10 +303,6 @@ function ManualAttestForm() {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// History panel
-// ---------------------------------------------------------------------------
 
 function HistoryPanel() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -385,7 +339,7 @@ function HistoryPanel() {
     <Table>
       <TableHeader>
         <TableRow className="border-slate-200">
-          <TableHead className="text-slate-600">Masjid</TableHead>
+          <TableHead className="text-slate-600">Masjid ID</TableHead>
           <TableHead className="text-slate-600">Keputusan</TableHead>
           <TableHead className="text-slate-600">Ya / Tidak</TableHead>
           <TableHead className="text-slate-600">Tanggal</TableHead>
@@ -395,8 +349,7 @@ function HistoryPanel() {
         {history.map((item) => (
           <TableRow key={item.tx_hash} className="border-slate-100">
             <TableCell>
-              <div className="font-medium text-slate-800">{item.masjid_name}</div>
-              <div className="font-mono text-[10px] text-slate-400">
+              <div className="font-mono text-xs text-slate-600">
                 {shortenAddr(item.masjid_id)}
               </div>
             </TableCell>
@@ -433,10 +386,6 @@ function HistoryPanel() {
     </Table>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
 
 function VerifierDashboardInner() {
   return (
@@ -486,7 +435,7 @@ export default function VerifierUI() {
             Dashboard Verifikator
           </h2>
           <p className="text-slate-500 mt-2">
-            Tinjau dan berikan attestasi untuk pendaftaran masjid baru.
+            Tinjau dan berikan attestasi untuk permintaan pendaftaran masjid baru.
           </p>
         </div>
         <VerifierDashboardInner />

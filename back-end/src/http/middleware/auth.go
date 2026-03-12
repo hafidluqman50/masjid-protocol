@@ -9,7 +9,6 @@ import (
 	"github.com/masjid-chain/back-end/src/service"
 )
 
-// InternalKey validates X-Internal-Key against INTERNAL_SECRET env var.
 func InternalKey() gin.HandlerFunc {
 	secret := config.GetEnv("INTERNAL_SECRET", "")
 	return func(c *gin.Context) {
@@ -27,7 +26,6 @@ func InternalKey() gin.HandlerFunc {
 	}
 }
 
-// JWTAuth validates Bearer JWT and sets wallet_address, role, name in context.
 func JWTAuth(auth *service.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
@@ -50,7 +48,6 @@ func JWTAuth(auth *service.AuthService) gin.HandlerFunc {
 	}
 }
 
-// RequireRole aborts if the JWT role does not match any of the allowed roles.
 func RequireRole(roles ...string) gin.HandlerFunc {
 	allowed := make(map[string]bool, len(roles))
 	for _, r := range roles {

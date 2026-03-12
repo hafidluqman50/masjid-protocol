@@ -8,10 +8,7 @@ import (
 	"github.com/masjid-chain/back-end/src/http/request"
 )
 
-// processInstances indexes events from all known MasjidInstance contracts.
 func (idx *Indexer) processInstances(ctx context.Context, head uint64) error {
-	// Load all known instance addresses from DB on each tick so newly
-	// registered masjids are picked up automatically.
 	instances, err := idx.repos.Masjid.ListInstanceAddresses(ctx)
 	if err != nil || len(instances) == 0 {
 		return err
@@ -84,10 +81,6 @@ func (idx *Indexer) processInstances(ctx context.Context, head uint64) error {
 	}
 	return nil
 }
-
-// ---------------------------------------------------------------------------
-// MasjidInstance event handlers
-// ---------------------------------------------------------------------------
 
 func (idx *Indexer) handleCashIn(ctx context.Context, l Log) error {
 	if len(l.Topics) < 2 {

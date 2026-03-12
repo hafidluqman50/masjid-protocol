@@ -56,16 +56,15 @@ func SetupRouter(db *gorm.DB, repos repository.Registry, svc service.Registry) *
 
 	api := router.Group("/api/v1")
 
-	// Auth — SIWE nonce + verify (public), me + name update (JWT)
 	auth := api.Group("/auth")
 	{
 		auth.GET("/nonce", authH.Nonce)
 		auth.POST("/verify", authH.Verify)
 		auth.GET("/me", jwtAuth, authH.Me)
 		auth.PUT("/me/name", jwtAuth, authH.UpdateName)
+		auth.POST("/me/role", jwtAuth, authH.ClaimBoardRole)
 	}
 
-	// Public — no auth, all data is on-chain public
 	pub := api.Group("/public")
 	{
 		pub.GET("/masjids", masjidH.List)
@@ -73,11 +72,11 @@ func SetupRouter(db *gorm.DB, repos repository.Registry, svc service.Registry) *
 		pub.GET("/masjids/:id/attests", masjidH.GetAttests)
 		pub.GET("/masjids/:id/stats", masjidH.GetStats)
 		pub.GET("/masjids/:id/donations", masjidH.GetDonations)
+		pub.GET("/masjids/:id/members", masjidH.GetMembers)
 		pub.GET("/masjids/:id/cashouts", masjidH.GetCashouts)
 		pub.GET("/verifiers", verifierH.ListActive)
 	}
 
-	// Board — JWT required, role=board; address from JWT context
 	board := api.Group("/board", jwtAuth, middleware.RequireRole("board"))
 	{
 		board.GET("/masjid", boardH.GetMyMasjid)
@@ -88,7 +87,6 @@ func SetupRouter(db *gorm.DB, repos repository.Registry, svc service.Registry) *
 		board.GET("/cashouts/pending", boardH.GetMyPendingCashouts)
 	}
 
-	// Verifier — JWT required, role=verifier; address from JWT context
 	ver := api.Group("/verifier", jwtAuth, middleware.RequireRole("verifier"))
 	{
 		ver.GET("/me", verifierH.GetMe)
@@ -96,7 +94,6 @@ func SetupRouter(db *gorm.DB, repos repository.Registry, svc service.Registry) *
 		ver.GET("/history", verifierH.GetHistory)
 	}
 
-	// Admin — JWT required, role=admin
 	adm := api.Group("/admin", jwtAuth, middleware.RequireRole("admin"))
 	{
 		adm.GET("/masjids", adminH.ListMasjids)
@@ -108,12 +105,13 @@ func SetupRouter(db *gorm.DB, repos repository.Registry, svc service.Registry) *
 		adm.GET("/cashouts/pending", adminH.ListPendingCashouts)
 	}
 
-	// Internal — server-to-server only, protected by INTERNAL_SECRET
 	internal := api.Group("/internal", middleware.InternalKey())
 	{
 		ev := internal.Group("/events")
-		ev.POST("/registration", internalH.Registration)
-		ev.POST("/attest", internalH.Attest)
+		ev.POST("/masjid-registered", internalH.MasjidRegistered)
+		ev.POST("/masjid-attested", internalH.MasjidAttested)
+		ev.POST("/masjid-rejected", internalH.MasjidRejected)
+		ev.POST("/masjid-verified", internalH.MasjidVerified)
 		ev.POST("/status", internalH.Status)
 		ev.POST("/cash-in", internalH.CashIn)
 		ev.POST("/cashout-proposed", internalH.CashOutProposed)

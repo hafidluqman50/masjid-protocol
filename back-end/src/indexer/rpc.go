@@ -25,7 +25,6 @@ type rpcResponse struct {
 	} `json:"error"`
 }
 
-// Log mirrors an Ethereum JSON-RPC log object.
 type Log struct {
 	Address     string   `json:"address"`
 	Topics      []string `json:"topics"`
@@ -34,7 +33,6 @@ type Log struct {
 	TxHash      string   `json:"transactionHash"`
 }
 
-// LogFilter is the filter object for eth_getLogs.
 type LogFilter struct {
 	FromBlock string        `json:"fromBlock"`
 	ToBlock   string        `json:"toBlock"`
@@ -42,7 +40,6 @@ type LogFilter struct {
 	Topics    []interface{} `json:"topics"`
 }
 
-// RPCClient is a minimal JSON-RPC client for EVM nodes.
 type RPCClient struct {
 	url    string
 	client *http.Client
@@ -119,7 +116,6 @@ func (c *RPCClient) blockTimestamp(ctx context.Context, num uint64) (int64, erro
 	return int64(n), err
 }
 
-// callString calls a view function that returns a single string.
 func (c *RPCClient) callString(ctx context.Context, to, data string) (string, error) {
 	raw, err := c.call(ctx, "eth_call", []interface{}{
 		map[string]string{"to": to, "data": data},

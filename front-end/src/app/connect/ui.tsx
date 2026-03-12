@@ -1,17 +1,24 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { Building2, Loader2, ShieldCheck } from "lucide-react";
+import { Building2, CheckCircle2, Loader2, ShieldCheck, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getClaims, roleRedirect, siweLogin, updateName } from "@/lib/auth";
+import {
+  claimBoardRole,
+  getClaims,
+  roleRedirect,
+  siweLogin,
+  updateName,
+  type JWTClaims,
+} from "@/lib/auth";
 
-type Step = "connect" | "signing" | "name" | "redirecting" | "done";
+type Step = "connect" | "signing" | "name" | "role" | "redirecting";
 
 export default function ConnectUI() {
   const router = useRouter();
@@ -22,26 +29,26 @@ export default function ConnectUI() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
+  const [claims, setClaims] = useState<JWTClaims | null>(null);
+  const [claimingBoard, setClaimingBoard] = useState(false);
+  const signingRef = useRef(false);
 
-  // Redirect if already logged in
   useEffect(() => {
-    const claims = getClaims();
-    if (claims) {
-      router.replace(roleRedirect(claims.role));
+    const existing = getClaims();
+    if (existing) {
+      router.replace(roleRedirect(existing.role));
     }
   }, [router]);
 
-  // Auto-trigger SIWE when wallet connects
   useEffect(() => {
-    if (!isConnected || !address || step !== "connect") return;
+    if (!isConnected || !address || step !== "connect" || signingRef.current) return;
 
     const existing = getClaims();
-    if (
-      existing &&
-      existing.address.toLowerCase() === address.toLowerCase()
-    ) {
+    if (existing && existing.address.toLowerCase() === address.toLowerCase()) {
       if (!existing.name) {
-        setStep("name");
+        setClaims(existing);
+        setStep("role");
       } else {
         setStep("redirecting");
         router.replace(roleRedirect(existing.role));
@@ -49,23 +56,26 @@ export default function ConnectUI() {
       return;
     }
 
+    signingRef.current = true;
     setStep("signing");
     setError(null);
 
     siweLogin(address, signMessageAsync)
-      .then((claims) => {
-        if (!claims.name) {
-          setStep("name");
-        } else if (claims.role === "guest") {
-          setStep("done");
+      .then((c) => {
+        setClaims(c);
+        if (!c.name) {
+          setStep("role");
         } else {
           setStep("redirecting");
-          router.replace(roleRedirect(claims.role));
+          router.replace(roleRedirect(c.role));
         }
       })
       .catch((err: unknown) => {
         setError((err as Error).message ?? "Gagal masuk");
         setStep("connect");
+      })
+      .finally(() => {
+        signingRef.current = false;
       });
   }, [isConnected, address, step, router, signMessageAsync]);
 
@@ -76,22 +86,36 @@ export default function ConnectUI() {
     if (trimmed.length < 3) return setNameError("Nama minimal 3 karakter");
     setNameError(null);
     try {
-      const claims = await updateName(trimmed);
-      if (claims.role === "guest") {
-        setStep("done");
-      } else {
-        setStep("redirecting");
-        router.replace(roleRedirect(claims.role));
-      }
+      const updated = await updateName(trimmed);
+      setClaims(updated);
+      setStep("redirecting");
+      router.replace(roleRedirect(updated.role));
     } catch (err: unknown) {
       setNameError((err as Error).message);
+    }
+  };
+
+  const handleSelectGuest = () => {
+    setStep("name");
+  };
+
+  const handleSelectBoard = async () => {
+    setRoleError(null);
+    setClaimingBoard(true);
+    try {
+      const updated = await claimBoardRole();
+      setClaims(updated);
+      setStep("name");
+    } catch (err: unknown) {
+      setRoleError((err as Error).message);
+    } finally {
+      setClaimingBoard(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
-        {/* Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <div className="w-14 h-14 rounded-2xl bg-emerald-700 flex items-center justify-center">
@@ -100,12 +124,11 @@ export default function ConnectUI() {
           </div>
           <h1 className="text-2xl font-bold text-slate-900">Masjid Protocol</h1>
           <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-            Donasi masjid yang transparan dan terverifikasi di atas blockchain
+            Infaq masjid yang transparan dan terverifikasi di atas blockchain
           </p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-          {/* Step: connect */}
           {step === "connect" && (
             <div className="space-y-6">
               <div className="text-center">
@@ -113,9 +136,7 @@ export default function ConnectUI() {
                   Hubungkan Dompet
                 </h2>
                 <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-                  Gunakan dompet kripto Anda untuk masuk ke platform. Tanda
-                  tangan digital akan diminta untuk memverifikasi identitas
-                  Anda.
+                  Gunakan dompet kripto Anda untuk masuk ke platform.
                 </p>
               </div>
 
@@ -126,17 +147,15 @@ export default function ConnectUI() {
               )}
 
               <div className="flex justify-center">
-                <ConnectButton label="Hubungkan Dompet" />
+                <ConnectButton label="Connect Wallet" />
               </div>
 
               <p className="text-xs text-slate-400 text-center leading-relaxed">
-                Dengan melanjutkan, Anda menyetujui bahwa platform ini berjalan
-                di jaringan Base Sepolia.
+                Platform berjalan di jaringan Base Sepolia.
               </p>
             </div>
           )}
 
-          {/* Step: signing */}
           {step === "signing" && (
             <div className="text-center py-6 space-y-4">
               <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
@@ -153,7 +172,6 @@ export default function ConnectUI() {
             </div>
           )}
 
-          {/* Step: name */}
           {step === "name" && (
             <div className="space-y-6">
               <div className="text-center">
@@ -161,8 +179,7 @@ export default function ConnectUI() {
                   Lengkapi Profil
                 </h2>
                 <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-                  Masukkan nama lengkap Anda. Nama ini akan ditampilkan di
-                  seluruh platform.
+                  Masukkan nama lengkap Anda.
                 </p>
               </div>
 
@@ -181,9 +198,6 @@ export default function ConnectUI() {
                   {nameError && (
                     <p className="text-xs text-red-600">{nameError}</p>
                   )}
-                  <p className="text-xs text-slate-400">
-                    Minimal 3 karakter. Tidak dapat diganti secara bebas.
-                  </p>
                 </div>
 
                 <Button
@@ -196,29 +210,58 @@ export default function ConnectUI() {
             </div>
           )}
 
-          {/* Step: done (guest — needs to register masjid) */}
-          {step === "done" && (
-            <div className="space-y-6 text-center">
-              <div>
+          {step === "role" && claims && (
+            <div className="space-y-5">
+              <div className="text-center">
+                <div className="flex justify-center mb-3">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+                </div>
                 <h2 className="text-lg font-semibold text-slate-800">
-                  Akun berhasil dibuat!
+                  Selamat datang, {claims.name}!
                 </h2>
-                <p className="text-sm text-slate-500 mt-1 leading-relaxed">
-                  Daftarkan masjid Anda untuk mendapatkan akses penuh sebagai
-                  pengurus.
+                <p className="text-sm text-slate-500 mt-1">
+                  Pilih peran Anda di platform ini.
                 </p>
               </div>
-              <Button
-                className="w-full bg-emerald-700 hover:bg-emerald-800 text-white h-11 text-base"
-                onClick={() => router.push("/board/register")}
-              >
-                <Building2 className="w-4 h-4 mr-2" />
-                Daftarkan Masjid
-              </Button>
+
+              {roleError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-center">
+                  {roleError}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={handleSelectGuest}
+                  disabled={claimingBoard}
+                  className="rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-emerald-400 hover:bg-emerald-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <User className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                  <p className="text-sm font-semibold text-slate-800">Pengunjung</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Donatur umum</p>
+                </button>
+
+                <button
+                  onClick={handleSelectBoard}
+                  disabled={claimingBoard}
+                  className="rounded-xl border-2 border-slate-200 bg-white p-4 text-center hover:border-emerald-400 hover:bg-emerald-50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {claimingBoard ? (
+                    <Loader2 className="w-8 h-8 mx-auto mb-2 text-emerald-600 animate-spin" />
+                  ) : (
+                    <Building2 className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+                  )}
+                  <p className="text-sm font-semibold text-slate-800">Pengurus Masjid</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Board masjid terdaftar</p>
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-400 text-center">
+                Pengurus Masjid hanya untuk alamat wallet yang telah terdaftar sebagai board on-chain.
+              </p>
             </div>
           )}
 
-          {/* Step: redirecting */}
           {step === "redirecting" && (
             <div className="text-center py-6 space-y-3">
               <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mx-auto" />

@@ -97,6 +97,27 @@ export async function updateName(name: string): Promise<JWTClaims> {
   return claims;
 }
 
+export async function claimBoardRole(): Promise<JWTClaims> {
+  const token = getToken();
+  if (!token) throw new Error("Sesi tidak ditemukan");
+  const res = await fetch(`${API_BASE}/auth/me/role`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const err = (await res.json()) as { error?: string };
+    throw new Error(err.error ?? "Gagal mengklaim role");
+  }
+  const { token: newToken } = (await res.json()) as { token: string };
+  setToken(newToken);
+  const claims = decodeToken(newToken);
+  if (!claims) throw new Error("Token tidak valid");
+  return claims;
+}
+
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const token = getToken();
   return fetch(`${API_BASE}${path}`, {

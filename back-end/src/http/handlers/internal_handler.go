@@ -12,35 +12,58 @@ type InternalHandler struct {
 	Event *service.EventService
 }
 
-// POST /internal/events/registration
-func (h *InternalHandler) Registration(c *gin.Context) {
-	var ev request.RegistrationEvent
+func (h *InternalHandler) MasjidRegistered(c *gin.Context) {
+	var ev request.MasjidRegisteredEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.Event.HandleRegistration(c.Request.Context(), ev); err != nil {
+	if err := h.Event.HandleMasjidRegistered(c.Request.Context(), ev); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/attest
-func (h *InternalHandler) Attest(c *gin.Context) {
-	var ev request.AttestEvent
+func (h *InternalHandler) MasjidAttested(c *gin.Context) {
+	var ev request.MasjidAttestedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if err := h.Event.HandleAttest(c.Request.Context(), ev); err != nil {
+	if err := h.Event.HandleMasjidAttested(c.Request.Context(), ev); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/status
+func (h *InternalHandler) MasjidRejected(c *gin.Context) {
+	var ev request.MasjidRejectedEvent
+	if err := c.ShouldBindJSON(&ev); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.Event.HandleMasjidRejected(c.Request.Context(), ev); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (h *InternalHandler) MasjidVerified(c *gin.Context) {
+	var ev request.MasjidVerifiedEvent
+	if err := c.ShouldBindJSON(&ev); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.Event.HandleMasjidVerified(c.Request.Context(), ev); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (h *InternalHandler) Status(c *gin.Context) {
 	var ev request.StatusEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -54,7 +77,6 @@ func (h *InternalHandler) Status(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/cash-in
 func (h *InternalHandler) CashIn(c *gin.Context) {
 	var ev request.CashInEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -68,7 +90,6 @@ func (h *InternalHandler) CashIn(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/cashout-proposed
 func (h *InternalHandler) CashOutProposed(c *gin.Context) {
 	var ev request.CashOutProposedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -82,7 +103,6 @@ func (h *InternalHandler) CashOutProposed(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/cashout-approved
 func (h *InternalHandler) CashOutApproved(c *gin.Context) {
 	var ev request.CashOutApprovedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -96,7 +116,6 @@ func (h *InternalHandler) CashOutApproved(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/cashout-executed
 func (h *InternalHandler) CashOutExecuted(c *gin.Context) {
 	var ev request.CashOutExecutedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -110,7 +129,6 @@ func (h *InternalHandler) CashOutExecuted(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/cashout-canceled
 func (h *InternalHandler) CashOutCanceled(c *gin.Context) {
 	var ev request.CashOutCanceledEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -124,7 +142,6 @@ func (h *InternalHandler) CashOutCanceled(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/board-member-updated
 func (h *InternalHandler) BoardMemberUpdated(c *gin.Context) {
 	var ev request.BoardMemberUpdatedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -138,7 +155,6 @@ func (h *InternalHandler) BoardMemberUpdated(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/verifier-added
 func (h *InternalHandler) VerifierAdded(c *gin.Context) {
 	var ev request.VerifierAddedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -152,7 +168,6 @@ func (h *InternalHandler) VerifierAdded(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// POST /internal/events/verifier-removed
 func (h *InternalHandler) VerifierRemoved(c *gin.Context) {
 	var ev request.VerifierRemovedEvent
 	if err := c.ShouldBindJSON(&ev); err != nil {
@@ -166,7 +181,6 @@ func (h *InternalHandler) VerifierRemoved(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-// GET /internal/checkpoint/:contract
 func (h *InternalHandler) GetCheckpoint(c *gin.Context) {
 	name := c.Param("contract")
 	cp, ok, err := h.Event.GetCheckpoint(c.Request.Context(), name)
@@ -181,7 +195,6 @@ func (h *InternalHandler) GetCheckpoint(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": cp})
 }
 
-// PUT /internal/checkpoint/:contract
 func (h *InternalHandler) UpdateCheckpoint(c *gin.Context) {
 	name := c.Param("contract")
 	var body request.CheckpointUpdate

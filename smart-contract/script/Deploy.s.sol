@@ -14,8 +14,9 @@ contract Deploy is Script {
         MockIDRX idrx = new MockIDRX();
         console.log("MockIDRX:        ", address(idrx));
 
-        address deployer = vm.addr(deployerKey);
-        VerifierRegistry registry = new VerifierRegistry(deployer, 1);
+        // AUTHORITY: defaults to deployer, override with AUTHORITY env var
+        address authority = vm.envOr("AUTHORITY", vm.addr(deployerKey));
+        VerifierRegistry registry = new VerifierRegistry(authority);
         console.log("VerifierRegistry:", address(registry));
 
         MasjidProtocol protocol = new MasjidProtocol(address(registry));
