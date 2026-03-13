@@ -3,7 +3,9 @@ package repository
 import (
 	"context"
 
+	"github.com/masjid-chain/back-end/src/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type CashInRepository struct {
@@ -35,4 +37,28 @@ func (r *CashInRepository) ListByMasjid(ctx context.Context, masjidID string, li
 	}
 	err := q.Scan(&items).Error
 	return items, err
+}
+
+func (r *CashInRepository) ListByDonor(ctx context.Context, donorAddr string, limit int) ([]DonationFeedItem, error) {
+	var items []DonationFeedItem
+	q := r.DB.WithContext(ctx).Table("v_donation_feed").
+		Where("LOWER(donor) = LOWER(?)", donorAddr).
+		Order("donated_at DESC")
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	err := q.Scan(&items).Error
+	return items, err
+}
+
+func (r *CashInRepository) Upsert(ctx context.Context, cashIn *model.CashIn) error {
+	return r.DB.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "tx_hash"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"instance_addr", "masjid_id", "donor", "amount",
+				"new_balance", "note_hash", "block_number", "donated_at",
+			}),
+		}).
+		Create(cashIn).Error
 }

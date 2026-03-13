@@ -14,7 +14,10 @@ func NewDatabase(ctx context.Context) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db, err := gorm.Open(postgres.Open(url), &gorm.Config{})
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  url,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}

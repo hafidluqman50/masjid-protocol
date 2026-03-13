@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Masjid Protocol",
   description:
-    "Platform donasi masjid berbasis blockchain yang transparan dan terverifikasi.",
+    "Platform infaq masjid berbasis blockchain yang transparan dan terverifikasi.",
 };
 
 export default function RootLayout({

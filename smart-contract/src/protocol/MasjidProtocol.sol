@@ -7,62 +7,78 @@ import {IMasjidInstance} from "./interfaces/IMasjidInstance.sol";
 
 interface IVerifierRegistry {
     function isVerifier(address account) external view returns (bool);
-
     function quorum() external view returns (uint256);
 }
 
 contract MasjidProtocol {
-    enum RegistrationStatus {
+    enum MasjidStatus {
         None,
         Pending,
+        Rejected,
         Verified,
         Flagged,
         Revoked
     }
 
-    struct MasjidRegistration {
+    struct Masjid {
         address proposer;
         address masjidAdmin;
-        address vault;
         address instance;
         address stablecoin;
-        string masjidName;
-        string metadataUri;
+        bytes32 nameHash;
+        uint256 cashOutThreshold;
         uint32 attestYes;
         uint32 attestNo;
-        RegistrationStatus status;
+        MasjidStatus status;
         uint64 createdAt;
         uint64 updatedAt;
+        string masjidName;
+        string metadataUri;
     }
 
-    error NotOwner();
+    error NotAdmin();
     error NotMasjidAdmin();
-    error InvalidThreshold();
     error ZeroAddress();
     error EmptyName();
-
-    /// @notice Caller is not a verifier registered in the VerifierRegistry.
     error NotAuthorizedVerifier();
-
     error InvalidStatus();
-    error AlreadyAttested();
     error AlreadyRegisteredName();
     error MasjidNotFound();
+    error AlreadyAttested();
 
-    event OwnershipTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
     event FactoryDeployed(address indexed factory);
 
     event MasjidRegistered(
         bytes32 indexed masjidId,
         bytes32 indexed nameHash,
         address indexed proposer,
-        address masjidAdmin,
-        address vault,
+        string masjidName,
+        string metadataUri,
         address stablecoin,
-        address instance
+        address[] boardMembers
+    );
+
+    event MasjidAttested(
+        bytes32 indexed masjidId,
+        address indexed verifier,
+        bool support,
+        uint32 yesCount,
+        uint32 noCount
+    );
+
+    event MasjidVerified(
+        bytes32 indexed masjidId,
+        address indexed instance,
+        address[] attesters,
+        uint32 yesCount,
+        uint32 noCount
+    );
+
+    event MasjidRejected(
+        bytes32 indexed masjidId,
+        address[] attesters,
+        uint32 yesCount,
+        uint32 noCount
     );
 
     event MasjidAdminTransferred(
@@ -71,259 +87,198 @@ contract MasjidProtocol {
         address indexed newAdmin
     );
 
-    event MasjidAttested(
-        bytes32 indexed masjidId,
-        address indexed verifier,
-        bool support,
-        bytes32 noteHash,
-        uint32 yesCount,
-        uint32 noCount
-    );
-
     event MasjidStatusUpdated(
         bytes32 indexed masjidId,
-        RegistrationStatus previousStatus,
-        RegistrationStatus newStatus
+        MasjidStatus previousStatus,
+        MasjidStatus newStatus
     );
 
-    address public owner;
+    address public immutable admin;
     uint256 public masjidNonce;
 
     IMasjidFactory public immutable FACTORY;
-
     IVerifierRegistry public immutable VERIFIER_REGISTRY;
 
-    mapping(bytes32 => MasjidRegistration) public masjidById;
+    mapping(bytes32 => Masjid) internal masjidById;
     mapping(bytes32 => bytes32) public masjidIdByNameHash;
-
+    mapping(bytes32 => address[]) public masjidBoardMembers;
+    mapping(bytes32 => address[]) public masjidAttesters;
     mapping(bytes32 => mapping(address => bool)) public hasAttested;
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
+    modifier onlyAdmin() {
+        if (msg.sender != admin) revert NotAdmin();
         _;
     }
 
     modifier onlyMasjidAdmin(bytes32 masjidId) {
-        if (masjidById[masjidId].masjidAdmin != msg.sender)
-            revert NotMasjidAdmin();
+        if (masjidById[masjidId].masjidAdmin != msg.sender) revert NotMasjidAdmin();
         _;
     }
 
     constructor(address verifierRegistry_) {
         if (verifierRegistry_ == address(0)) revert ZeroAddress();
-
-        owner = msg.sender;
-        emit OwnershipTransferred(address(0), msg.sender);
-
+        admin = msg.sender;
         VERIFIER_REGISTRY = IVerifierRegistry(verifierRegistry_);
-
         FACTORY = IMasjidFactory(address(new MasjidFactory(address(this))));
         emit FactoryDeployed(address(FACTORY));
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert ZeroAddress();
-
-        address previous = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(previous, newOwner);
     }
 
     function register(
         string calldata masjidName,
         string calldata metadataUri,
         address stablecoin,
-        address[] calldata cashOutVerifiers,
-        uint256 cashOutThreshold
-    ) public returns (bytes32 masjidId, address instance) {
+        address[] calldata boardMembers
+    ) external returns (bytes32 masjidId) {
         if (bytes(masjidName).length == 0) revert EmptyName();
         if (stablecoin == address(0)) revert ZeroAddress();
-        if (cashOutThreshold == 0) revert InvalidThreshold();
-        if (cashOutVerifiers.length < cashOutThreshold)
-            revert InvalidThreshold();
+        if (boardMembers.length == 0) revert ZeroAddress();
 
         bytes32 nameHash = keccak256(bytes(masjidName));
-        if (masjidIdByNameHash[nameHash] != bytes32(0))
-            revert AlreadyRegisteredName();
+
+        {
+            bytes32 existing = masjidIdByNameHash[nameHash];
+            if (existing != bytes32(0)) {
+                if (masjidById[existing].status != MasjidStatus.Rejected) revert AlreadyRegisteredName();
+            }
+        }
 
         masjidNonce += 1;
         masjidId = keccak256(
-            abi.encode(
-                block.chainid,
-                address(this),
-                masjidNonce,
-                msg.sender,
-                nameHash
-            )
+            abi.encode(block.chainid, address(this), masjidNonce, msg.sender, nameHash)
         );
 
-        instance = FACTORY.deployMasjid(
-            masjidId,
-            masjidName,
-            metadataUri,
-            msg.sender,
-            stablecoin,
-            cashOutVerifiers,
-            cashOutThreshold
-        );
+        Masjid storage m = masjidById[masjidId];
+        m.proposer        = msg.sender;
+        m.masjidAdmin     = msg.sender;
+        m.stablecoin      = stablecoin;
+        m.nameHash        = nameHash;
+        m.cashOutThreshold = boardMembers.length / 2 + 1;
+        m.status          = MasjidStatus.Pending;
+        m.createdAt       = uint64(block.timestamp);
+        m.updatedAt       = uint64(block.timestamp);
+        m.masjidName      = masjidName;
+        m.metadataUri     = metadataUri;
 
-        masjidById[masjidId] = MasjidRegistration({
-            proposer: msg.sender,
-            masjidAdmin: msg.sender,
-            vault: instance,
-            instance: instance,
-            stablecoin: stablecoin,
-            masjidName: masjidName,
-            metadataUri: metadataUri,
-            attestYes: 0,
-            attestNo: 0,
-            status: RegistrationStatus.Pending,
-            createdAt: uint64(block.timestamp),
-            updatedAt: uint64(block.timestamp)
-        });
-
+        masjidBoardMembers[masjidId] = boardMembers;
         masjidIdByNameHash[nameHash] = masjidId;
 
         emit MasjidRegistered(
-            masjidId,
-            nameHash,
-            msg.sender,
-            msg.sender,
-            instance,
-            stablecoin,
-            instance
+            masjidId, nameHash, msg.sender,
+            masjidName, metadataUri, stablecoin,
+            boardMembers
         );
     }
 
-    function transferAdmin(
-        bytes32 masjidId,
-        address newAdmin
-    ) external onlyMasjidAdmin(masjidId) {
-        if (masjidById[masjidId].instance == address(0))
-            revert MasjidNotFound();
+    function attest(bytes32 masjidId, bool support) external {
+        if (!VERIFIER_REGISTRY.isVerifier(msg.sender)) revert NotAuthorizedVerifier();
+
+        Masjid storage masjid = masjidById[masjidId];
+        if (masjid.createdAt == 0) revert MasjidNotFound();
+        if (masjid.status != MasjidStatus.Pending) revert InvalidStatus();
+        if (hasAttested[masjidId][msg.sender]) revert AlreadyAttested();
+
+        hasAttested[masjidId][msg.sender] = true;
+        masjidAttesters[masjidId].push(msg.sender);
+
+        if (support) { masjid.attestYes += 1; } else { masjid.attestNo += 1; }
+        masjid.updatedAt = uint64(block.timestamp);
+
+        emit MasjidAttested(masjidId, msg.sender, support, masjid.attestYes, masjid.attestNo);
+
+        uint256 quorum = VERIFIER_REGISTRY.quorum();
+        if (masjid.attestYes >= quorum) {
+            _verified(masjidId, masjid);
+        } else if (masjid.attestNo >= quorum) {
+            _rejected(masjidId, masjid);
+        }
+    }
+
+    function _verified(bytes32 masjidId, Masjid storage masjid) internal {
+        address instance;
+        {
+            address[] memory boardMembers = masjidBoardMembers[masjidId];
+            instance = FACTORY.deployMasjid(
+                masjidId,
+                masjid.masjidName,
+                masjid.metadataUri,
+                masjid.proposer,
+                masjid.stablecoin,
+                boardMembers,
+                masjid.cashOutThreshold
+            );
+        }
+
+        masjid.instance  = instance;
+        masjid.status    = MasjidStatus.Verified;
+        masjid.updatedAt = uint64(block.timestamp);
+
+        IMasjidInstance(instance).setStatus(IMasjidInstance.VerificationStatus.Verified);
+
+        emit MasjidVerified(masjidId, instance, masjidAttesters[masjidId], masjid.attestYes, masjid.attestNo);
+    }
+
+    function _rejected(bytes32 masjidId, Masjid storage masjid) internal {
+        masjid.status    = MasjidStatus.Rejected;
+        masjid.updatedAt = uint64(block.timestamp);
+        emit MasjidRejected(masjidId, masjidAttesters[masjidId], masjid.attestYes, masjid.attestNo);
+    }
+
+    function transferAdmin(bytes32 masjidId, address newAdmin) external onlyMasjidAdmin(masjidId) {
+        Masjid storage masjid = masjidById[masjidId];
+        if (masjid.instance == address(0)) revert MasjidNotFound();
         if (newAdmin == address(0)) revert ZeroAddress();
 
-        address previous = masjidById[masjidId].masjidAdmin;
-        masjidById[masjidId].masjidAdmin = newAdmin;
-        masjidById[masjidId].updatedAt = uint64(block.timestamp);
+        address previous   = masjid.masjidAdmin;
+        masjid.masjidAdmin = newAdmin;
+        masjid.updatedAt   = uint64(block.timestamp);
 
-        IMasjidInstance(masjidById[masjidId].instance).setAdmin(newAdmin);
-
+        IMasjidInstance(masjid.instance).setAdmin(newAdmin);
         emit MasjidAdminTransferred(masjidId, previous, newAdmin);
     }
 
-    function attest(
-        bytes32 masjidId,
-        bool support,
-        string calldata note
-    ) external {
-        if (!VERIFIER_REGISTRY.isVerifier(msg.sender))
-            revert NotAuthorizedVerifier();
-
-        MasjidRegistration storage registration = masjidById[masjidId];
-
-        if (registration.instance == address(0)) revert MasjidNotFound();
-
-        if (
-            registration.status != RegistrationStatus.Pending &&
-            registration.status != RegistrationStatus.Flagged
-        ) {
-            revert InvalidStatus();
-        }
-
-        if (hasAttested[masjidId][msg.sender]) revert AlreadyAttested();
-        hasAttested[masjidId][msg.sender] = true;
-
-        if (support) {
-            registration.attestYes += 1;
-        } else {
-            registration.attestNo += 1;
-        }
-
-        registration.updatedAt = uint64(block.timestamp);
-
-        emit MasjidAttested(
-            masjidId,
-            msg.sender,
-            support,
-            keccak256(bytes(note)),
-            registration.attestYes,
-            registration.attestNo
-        );
-
-        uint256 threshold = VERIFIER_REGISTRY.quorum();
-
-        if (registration.attestYes >= threshold) {
-            _setStatus(
-                masjidId,
-                registration,
-                RegistrationStatus.Verified,
-                IMasjidInstance.VerificationStatus.Verified
-            );
-            return;
-        }
-
-        if (registration.attestNo >= threshold) {
-            _setStatus(
-                masjidId,
-                registration,
-                RegistrationStatus.Flagged,
-                IMasjidInstance.VerificationStatus.Flagged
-            );
-        }
+    function flag(bytes32 masjidId) external onlyAdmin {
+        Masjid storage m = masjidById[masjidId];
+        if (m.instance == address(0)) revert MasjidNotFound();
+        if (m.status != MasjidStatus.Verified) revert InvalidStatus();
+        _setStatus(masjidId, m, MasjidStatus.Flagged, IMasjidInstance.VerificationStatus.Flagged);
     }
 
-    function revoke(bytes32 masjidId) external onlyOwner {
-        MasjidRegistration storage registration = masjidById[masjidId];
-
-        if (registration.instance == address(0)) revert MasjidNotFound();
-        if (
-            registration.status != RegistrationStatus.Pending &&
-            registration.status != RegistrationStatus.Verified &&
-            registration.status != RegistrationStatus.Flagged
-        ) revert InvalidStatus();
-
-        _setStatus(
-            masjidId,
-            registration,
-            RegistrationStatus.Revoked,
-            IMasjidInstance.VerificationStatus.Revoked
-        );
+    function unflag(bytes32 masjidId) external onlyAdmin {
+        Masjid storage m = masjidById[masjidId];
+        if (m.instance == address(0)) revert MasjidNotFound();
+        if (m.status != MasjidStatus.Flagged) revert InvalidStatus();
+        _setStatus(masjidId, m, MasjidStatus.Verified, IMasjidInstance.VerificationStatus.Verified);
     }
 
-    function flag(bytes32 masjidId) external onlyOwner {
-        MasjidRegistration storage registration = masjidById[masjidId];
-
-        if (registration.instance == address(0)) revert MasjidNotFound();
-        if (registration.status != RegistrationStatus.Verified)
-            revert InvalidStatus();
-
-        _setStatus(
-            masjidId,
-            registration,
-            RegistrationStatus.Flagged,
-            IMasjidInstance.VerificationStatus.Flagged
-        );
+    function revoke(bytes32 masjidId) external onlyAdmin {
+        Masjid storage m = masjidById[masjidId];
+        if (m.instance == address(0)) revert MasjidNotFound();
+        if (m.status != MasjidStatus.Verified && m.status != MasjidStatus.Flagged) revert InvalidStatus();
+        _setStatus(masjidId, m, MasjidStatus.Revoked, IMasjidInstance.VerificationStatus.Revoked);
     }
 
-    function get(
-        bytes32 masjidId
-    ) external view returns (MasjidRegistration memory) {
+    function get(bytes32 masjidId) external view returns (Masjid memory) {
         return masjidById[masjidId];
+    }
+
+    function getBoardMembers(bytes32 masjidId) external view returns (address[] memory) {
+        return masjidBoardMembers[masjidId];
+    }
+
+    function getAttesters(bytes32 masjidId) external view returns (address[] memory) {
+        return masjidAttesters[masjidId];
     }
 
     function _setStatus(
         bytes32 masjidId,
-        MasjidRegistration storage registration,
-        RegistrationStatus newStatus,
+        Masjid storage masjid,
+        MasjidStatus newStatus,
         IMasjidInstance.VerificationStatus instanceStatus
     ) internal {
-        RegistrationStatus previous = registration.status;
-        registration.status = newStatus;
-        registration.updatedAt = uint64(block.timestamp);
-
-        IMasjidInstance(registration.instance).setStatus(instanceStatus);
-
+        MasjidStatus previous = masjid.status;
+        masjid.status         = newStatus;
+        masjid.updatedAt      = uint64(block.timestamp);
+        IMasjidInstance(masjid.instance).setStatus(instanceStatus);
         emit MasjidStatusUpdated(masjidId, previous, newStatus);
     }
 }

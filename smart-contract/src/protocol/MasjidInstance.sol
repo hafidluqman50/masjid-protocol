@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {IMasjidInstance} from "./interfaces/IMasjidInstance.sol";
 
 interface IERC20 {
@@ -15,7 +16,11 @@ interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
 }
 
-contract MasjidInstance is IMasjidInstance {
+contract MasjidInstance is IMasjidInstance, AccessControl {
+    bytes32 public constant PROTOCOL_ROLE = keccak256("PROTOCOL_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant BOARD_ROLE = keccak256("BOARD_ROLE");
+
     struct CashOutRequest {
         address to;
         uint256 amount;
@@ -29,8 +34,6 @@ contract MasjidInstance is IMasjidInstance {
     }
 
     error OnlyProtocol();
-    error NotAdmin();
-    error NotCashOutVerifier();
     error ZeroAddress();
     error AmountZero();
     error TransferFailed();
@@ -52,7 +55,7 @@ contract MasjidInstance is IMasjidInstance {
     );
     event MetadataUpdated(string oldMetadataUri, string newMetadataUri);
     event AdminUpdated(address indexed previousAdmin, address indexed newAdmin);
-    event CashOutVerifierUpdated(address indexed verifier, bool allowed);
+    event BoardMemberUpdated(address indexed member, bool allowed);
     event CashOutThresholdUpdated(
         uint256 previousThreshold,
         uint256 newThreshold
@@ -95,28 +98,12 @@ contract MasjidInstance is IMasjidInstance {
     uint64 public immutable CREATED_AT;
     uint64 public verifiedAt;
 
-    uint256 public cashOutVerifierCount;
+    uint256 public boardMemberCount;
     uint256 public cashOutThreshold;
     uint256 public cashOutNonce;
 
-    mapping(address => bool) public isCashOutVerifier;
     mapping(uint256 => CashOutRequest) public cashOutById;
     mapping(uint256 => mapping(address => bool)) public hasApprovedCashOut;
-
-    modifier onlyProtocol() {
-        if (msg.sender != PROTOCOL) revert OnlyProtocol();
-        _;
-    }
-
-    modifier onlyAdmin() {
-        if (msg.sender != masjidAdmin) revert NotAdmin();
-        _;
-    }
-
-    modifier onlyCashOutVerifier() {
-        if (!isCashOutVerifier[msg.sender]) revert NotCashOutVerifier();
-        _;
-    }
 
     constructor(
         address protocol_,
@@ -125,7 +112,7 @@ contract MasjidInstance is IMasjidInstance {
         string memory metadataUri_,
         address masjidAdmin_,
         address stablecoin_,
-        address[] memory initialVerifiers,
+        address[] memory initialBoardMembers,
         uint256 threshold
     ) {
         if (
@@ -134,7 +121,7 @@ contract MasjidInstance is IMasjidInstance {
             stablecoin_ == address(0)
         ) revert ZeroAddress();
         if (threshold == 0) revert InvalidThreshold();
-        if (initialVerifiers.length < threshold) revert InvalidThreshold();
+        if (initialBoardMembers.length < threshold) revert InvalidThreshold();
 
         PROTOCOL = protocol_;
         FACTORY = msg.sender;
@@ -146,15 +133,22 @@ contract MasjidInstance is IMasjidInstance {
         status = VerificationStatus.Unverified;
         CREATED_AT = uint64(block.timestamp);
 
-        uint256 len = initialVerifiers.length;
-        for (uint256 i = 0; i < len; i++) {
-            address verifier = initialVerifiers[i];
-            if (verifier == address(0)) revert ZeroAddress();
-            if (isCashOutVerifier[verifier]) revert DuplicateVerifier();
+        _grantRole(PROTOCOL_ROLE, protocol_);
+        _setRoleAdmin(PROTOCOL_ROLE, PROTOCOL_ROLE);
 
-            isCashOutVerifier[verifier] = true;
-            cashOutVerifierCount += 1;
-            emit CashOutVerifierUpdated(verifier, true);
+        _grantRole(ADMIN_ROLE, masjidAdmin_);
+        _setRoleAdmin(ADMIN_ROLE, PROTOCOL_ROLE);
+        _setRoleAdmin(BOARD_ROLE, ADMIN_ROLE);
+
+        uint256 len = initialBoardMembers.length;
+        for (uint256 i = 0; i < len; i++) {
+            address member = initialBoardMembers[i];
+            if (member == address(0)) revert ZeroAddress();
+            if (hasRole(BOARD_ROLE, member)) revert DuplicateVerifier();
+
+            _grantRole(BOARD_ROLE, member);
+            boardMemberCount += 1;
+            emit BoardMemberUpdated(member, true);
         }
 
         cashOutThreshold = threshold;
@@ -196,7 +190,7 @@ contract MasjidInstance is IMasjidInstance {
         uint256 amount,
         bytes32 noteHash,
         uint64 expiresInSeconds
-    ) external onlyAdmin returns (uint256 requestId) {
+    ) external onlyRole(BOARD_ROLE) returns (uint256 requestId) {
         if (status != VerificationStatus.Verified) revert InvalidStatus();
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0) revert AmountZero();
@@ -229,7 +223,7 @@ contract MasjidInstance is IMasjidInstance {
         );
     }
 
-    function approveCashOut(uint256 requestId) external onlyCashOutVerifier {
+    function approveCashOut(uint256 requestId) external onlyRole(BOARD_ROLE) {
         if (status != VerificationStatus.Verified) revert InvalidStatus();
 
         CashOutRequest storage request = cashOutById[requestId];
@@ -246,7 +240,7 @@ contract MasjidInstance is IMasjidInstance {
         emit CashOutApproved(requestId, msg.sender, request.approvals);
     }
 
-    function executeCashOut(uint256 requestId) external onlyAdmin {
+    function executeCashOut(uint256 requestId) external onlyRole(ADMIN_ROLE) {
         if (status != VerificationStatus.Verified) revert InvalidStatus();
 
         CashOutRequest storage request = cashOutById[requestId];
@@ -265,7 +259,7 @@ contract MasjidInstance is IMasjidInstance {
         emit CashOutExecuted(requestId, msg.sender);
     }
 
-    function cancelCashOut(uint256 requestId) external onlyAdmin {
+    function cancelCashOut(uint256 requestId) external onlyRole(ADMIN_ROLE) {
         CashOutRequest storage request = cashOutById[requestId];
         if (request.createdAt == 0) revert CashOutNotFound();
         if (request.executed) revert CashOutAlreadyExecuted();
@@ -276,34 +270,30 @@ contract MasjidInstance is IMasjidInstance {
         emit CashOutCanceled(requestId, msg.sender);
     }
 
-    function setCashOutVerifier(
-        address verifier,
+    function setBoardMember(
+        address member,
         bool allowed
-    ) external onlyAdmin {
-        if (verifier == address(0)) revert ZeroAddress();
-
-        bool current = isCashOutVerifier[verifier];
-        if (current == allowed) {
-            emit CashOutVerifierUpdated(verifier, allowed);
-            return;
-        }
-
-        isCashOutVerifier[verifier] = allowed;
+    ) external onlyRole(ADMIN_ROLE) {
+        if (member == address(0)) revert ZeroAddress();
 
         if (allowed) {
-            cashOutVerifierCount += 1;
+            if (hasRole(BOARD_ROLE, member)) revert DuplicateVerifier();
+            _grantRole(BOARD_ROLE, member);
+            boardMemberCount += 1;
         } else {
-            cashOutVerifierCount -= 1;
-            if (cashOutThreshold > cashOutVerifierCount)
-                revert InvalidThreshold();
+            _revokeRole(BOARD_ROLE, member);
+            boardMemberCount -= 1;
+            if (cashOutThreshold > boardMemberCount) revert InvalidThreshold();
         }
 
-        emit CashOutVerifierUpdated(verifier, allowed);
+        emit BoardMemberUpdated(member, allowed);
     }
 
-    function setCashOutThreshold(uint256 newThreshold) external onlyAdmin {
+    function setCashOutThreshold(
+        uint256 newThreshold
+    ) external onlyRole(ADMIN_ROLE) {
         if (newThreshold == 0) revert InvalidThreshold();
-        if (newThreshold > cashOutVerifierCount) revert InvalidThreshold();
+        if (newThreshold > boardMemberCount) revert InvalidThreshold();
 
         uint256 previous = cashOutThreshold;
         cashOutThreshold = newThreshold;
@@ -311,16 +301,20 @@ contract MasjidInstance is IMasjidInstance {
         emit CashOutThresholdUpdated(previous, newThreshold);
     }
 
-    function setAdmin(address newAdmin) external onlyProtocol {
+    function setAdmin(address newAdmin) external onlyRole(PROTOCOL_ROLE) {
         if (newAdmin == address(0)) revert ZeroAddress();
 
         address previous = masjidAdmin;
+        _revokeRole(ADMIN_ROLE, previous);
+        _grantRole(ADMIN_ROLE, newAdmin);
         masjidAdmin = newAdmin;
 
         emit AdminUpdated(previous, newAdmin);
     }
 
-    function setStatus(VerificationStatus newStatus) external onlyProtocol {
+    function setStatus(
+        VerificationStatus newStatus
+    ) external onlyRole(PROTOCOL_ROLE) {
         VerificationStatus previous = status;
         status = newStatus;
 
@@ -333,7 +327,7 @@ contract MasjidInstance is IMasjidInstance {
 
     function setMetadataUri(
         string calldata newMetadataUri
-    ) external onlyProtocol {
+    ) external onlyRole(PROTOCOL_ROLE) {
         string memory previous = metadataUri;
         metadataUri = newMetadataUri;
         emit MetadataUpdated(previous, newMetadataUri);

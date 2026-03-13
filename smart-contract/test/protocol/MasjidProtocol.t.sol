@@ -12,9 +12,7 @@ contract MockERC20 {
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
 
-    function mint(address to, uint256 amount) external {
-        balanceOf[to] += amount;
-    }
+    function mint(address to, uint256 amount) external { balanceOf[to] += amount; }
 
     function approve(address spender, uint256 amount) external returns (bool) {
         allowance[msg.sender][spender] = amount;
@@ -28,17 +26,9 @@ contract MockERC20 {
         return true;
     }
 
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
         require(balanceOf[from] >= amount, "INSUFFICIENT_BALANCE");
-        require(
-            allowance[from][msg.sender] >= amount,
-            "INSUFFICIENT_ALLOWANCE"
-        );
-
+        require(allowance[from][msg.sender] >= amount, "INSUFFICIENT_ALLOWANCE");
         allowance[from][msg.sender] -= amount;
         balanceOf[from] -= amount;
         balanceOf[to] += amount;
@@ -47,18 +37,13 @@ contract MockERC20 {
 }
 
 contract MasjidProtocolTest is Test {
-
-
     VerifierRegistry internal registry;
-    MasjidProtocol internal protocol;
-    MockERC20 internal stablecoin;
-
-
+    MasjidProtocol   internal protocol;
+    MockERC20        internal stablecoin;
 
     address internal authority = address(0xCA11);
-    address internal proposer = address(0xA11CE);
-
-    address internal donor = address(0xD0A0);
+    address internal proposer  = address(0xA11CE);
+    address internal donor     = address(0xD0A0);
     address internal recipient = address(0xB0B);
 
     address internal kemenagVerifier1 = address(0x101);
@@ -71,13 +56,11 @@ contract MasjidProtocolTest is Test {
 
     address internal stranger = address(0x999);
 
-
-
     function setUp() public {
         stablecoin = new MockERC20();
 
         vm.prank(authority);
-        registry = new VerifierRegistry(authority, 2);
+        registry = new VerifierRegistry(authority);
 
         vm.startPrank(authority);
         registry.addVerifier(kemenagVerifier1, "Kemenag Pusat - Verifier 1");
@@ -88,321 +71,211 @@ contract MasjidProtocolTest is Test {
         protocol = new MasjidProtocol(address(registry));
     }
 
-
-
-    function _boardVerifiers()
-        internal
-        view
-        returns (address[] memory verifiers)
-    {
-        verifiers = new address[](3);
-        verifiers[0] = boardMember1;
-        verifiers[1] = boardMember2;
-        verifiers[2] = boardMember3;
+    function _boardMembers() internal view returns (address[] memory members) {
+        members = new address[](3);
+        members[0] = boardMember1;
+        members[1] = boardMember2;
+        members[2] = boardMember3;
     }
 
-    function _registerAndVerify()
-        internal
-        returns (bytes32 masjidId, address vault)
-    {
+    function _registerAndVerify(string memory name) internal returns (bytes32 masjidId, address instance) {
         vm.prank(proposer);
-        (masjidId, vault) = protocol.register(
-            "Masjid Al-Funds",
-            "ipfs://funds",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        masjidId = protocol.register(name, "ipfs://meta", address(stablecoin), _boardMembers());
 
         vm.prank(kemenagVerifier1);
-        protocol.attest(masjidId, true, "Dokumen lengkap, lokasi valid");
+        protocol.attest(masjidId, true);
 
         vm.prank(kemenagVerifier2);
-        protocol.attest(masjidId, true, "Verifikasi lapangan selesai");
+        protocol.attest(masjidId, true);
+
+        instance = protocol.get(masjidId).instance;
     }
 
-
-
-    function test_RegisterAndVerifyByKemenag() public {
-        (bytes32 masjidId, ) = _registerAndVerify();
-
-        MasjidProtocol.MasjidRegistration memory reg = protocol.get(masjidId);
-        assertEq(
-            uint256(reg.status),
-            uint256(MasjidProtocol.RegistrationStatus.Verified)
-        );
-        assertEq(reg.attestYes, 2);
-        assertEq(reg.attestNo, 0);
+    function test_RegisterAndVerify() public {
+        (bytes32 masjidId, ) = _registerAndVerify("Masjid Al-Funds");
+        MasjidProtocol.Masjid memory m = protocol.get(masjidId);
+        assertEq(uint256(m.status), uint256(MasjidProtocol.MasjidStatus.Verified));
+        assertEq(m.attestYes, 2);
+        assertEq(m.attestNo, 0);
     }
 
-    function test_RevertIfPengurusTriesToAttest() public {
+    function test_StatusPendingBeforeQuorum() public {
         vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid As-Salam",
-            "ipfs://x",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        bytes32 masjidId = protocol.register("Masjid Pending", "ipfs://x", address(stablecoin), _boardMembers());
+
+        MasjidProtocol.Masjid memory m = protocol.get(masjidId);
+        assertEq(uint256(m.status), uint256(MasjidProtocol.MasjidStatus.Pending));
+        assertEq(m.instance, address(0));
+
+        vm.prank(kemenagVerifier1);
+        protocol.attest(masjidId, true);
+
+        m = protocol.get(masjidId);
+        assertEq(uint256(m.status), uint256(MasjidProtocol.MasjidStatus.Pending));
+    }
+
+    function test_RevertIfNonVerifierAttests() public {
+        vm.prank(proposer);
+        bytes32 masjidId = protocol.register("Masjid As-Salam", "ipfs://x", address(stablecoin), _boardMembers());
 
         vm.prank(proposer);
         vm.expectRevert(MasjidProtocol.NotAuthorizedVerifier.selector);
-        protocol.attest(masjidId, true, "self-attest attempt");
+        protocol.attest(masjidId, true);
     }
 
-    function test_RevertIfStrangerAttests() public {
+    function test_RejectedWhenNoQuorum() public {
         vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid Al-Haq",
-            "ipfs://haq",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        bytes32 masjidId = protocol.register("Masjid Suspicious", "ipfs://sus", address(stablecoin), _boardMembers());
 
-        vm.prank(stranger);
-        vm.expectRevert(MasjidProtocol.NotAuthorizedVerifier.selector);
-        protocol.attest(masjidId, true, "spam");
-    }
+        vm.prank(kemenagVerifier1);
+        protocol.attest(masjidId, false);
+        vm.prank(kemenagVerifier2);
+        protocol.attest(masjidId, false);
 
-    function test_RevertIfBoardMemberAttests() public {
-        vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid Al-Ikhlas",
-            "ipfs://ikhlas",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
-
-        vm.prank(boardMember1);
-        vm.expectRevert(MasjidProtocol.NotAuthorizedVerifier.selector);
-        protocol.attest(masjidId, true, "board self-attest attempt");
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Rejected));
     }
 
     function test_RevertOnDoubleAttestation() public {
         vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid Al-Barakah",
-            "ipfs://barakah",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        bytes32 masjidId = protocol.register("Masjid Al-Barakah", "ipfs://barakah", address(stablecoin), _boardMembers());
 
         vm.startPrank(kemenagVerifier1);
-        protocol.attest(masjidId, true, "first vote");
-
+        protocol.attest(masjidId, true);
         vm.expectRevert(MasjidProtocol.AlreadyAttested.selector);
-        protocol.attest(masjidId, true, "second vote");
+        protocol.attest(masjidId, true);
         vm.stopPrank();
     }
 
-    function test_FlaggedWhenNoVotesReachQuorum() public {
-        vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid Suspicious",
-            "ipfs://sus",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
-
-        vm.prank(kemenagVerifier1);
-        protocol.attest(masjidId, false, "Data tidak valid");
-
-        vm.prank(kemenagVerifier2);
-        protocol.attest(masjidId, false, "Lokasi tidak ditemukan");
-
-        MasjidProtocol.MasjidRegistration memory reg = protocol.get(masjidId);
-        assertEq(
-            uint256(reg.status),
-            uint256(MasjidProtocol.RegistrationStatus.Flagged)
-        );
-    }
-
-
-
-    function test_CashInAndCashOutFromInstanceVoting() public {
-        (bytes32 masjidId, address vault) = _registerAndVerify();
-        masjidId;
-
+    function test_CashInAndCashOutFromBoardVoting() public {
+        (, address instance) = _registerAndVerify("Masjid Al-Funds");
         stablecoin.mint(donor, 1_000e18);
 
         vm.startPrank(donor);
-        stablecoin.approve(vault, 1_000e18);
-        MasjidInstance(vault).cashIn(1_000e18, keccak256("infaq"));
+        stablecoin.approve(instance, 1_000e18);
+        MasjidInstance(instance).cashIn(1_000e18, keccak256("infaq"));
         vm.stopPrank();
 
-        MasjidInstance instance = MasjidInstance(vault);
-
-        vm.prank(proposer);
-        uint256 requestId = instance.proposeCashOut(
-            recipient,
-            400e18,
-            keccak256("operasional listrik"),
-            3 days
-        );
+        MasjidInstance inst = MasjidInstance(instance);
 
         vm.prank(boardMember1);
-        instance.approveCashOut(requestId);
+        uint256 cashOutId = inst.proposeCashOut(recipient, 400e18, keccak256("operasional listrik"), 3 days);
+
+        vm.prank(boardMember2);
+        inst.approveCashOut(cashOutId);
 
         vm.prank(proposer);
         vm.expectRevert(MasjidInstance.CashOutThresholdNotReached.selector);
-        instance.executeCashOut(requestId);
+        inst.executeCashOut(cashOutId);
 
-        vm.prank(boardMember2);
-        instance.approveCashOut(requestId);
+        vm.prank(boardMember3);
+        inst.approveCashOut(cashOutId);
 
         vm.prank(proposer);
-        instance.executeCashOut(requestId);
+        inst.executeCashOut(cashOutId);
 
         assertEq(stablecoin.balanceOf(recipient), 400e18);
-        assertEq(stablecoin.balanceOf(vault), 600e18);
+        assertEq(stablecoin.balanceOf(instance), 600e18);
     }
 
-    function test_RevertIfKemenagVerifierApproveCashOut() public {
-        (, address vault) = _registerAndVerify();
+    function test_RevertIfNonBoardApprovesCashOut() public {
+        (, address instance) = _registerAndVerify("Masjid CashOut Test");
+        MasjidInstance inst = MasjidInstance(instance);
 
-        MasjidInstance instance = MasjidInstance(vault);
-
-        vm.prank(proposer);
-        uint256 requestId = instance.proposeCashOut(
-            recipient,
-            100e18,
-            keccak256("test"),
-            1 days
-        );
+        vm.prank(boardMember1);
+        uint256 cashOutId = inst.proposeCashOut(recipient, 100e18, keccak256("test"), 1 days);
 
         vm.prank(kemenagVerifier1);
-        vm.expectRevert(MasjidInstance.NotCashOutVerifier.selector);
-        instance.approveCashOut(requestId);
+        vm.expectRevert();
+        inst.approveCashOut(cashOutId);
     }
-
-
 
     function test_RemovedVerifierCanNoLongerAttest() public {
         vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid Terbaru",
-            "ipfs://new",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        bytes32 masjidId = protocol.register("Masjid Terbaru", "ipfs://new", address(stablecoin), _boardMembers());
 
         vm.prank(authority);
         registry.removeVerifier(kemenagVerifier3);
 
         vm.prank(kemenagVerifier3);
         vm.expectRevert(MasjidProtocol.NotAuthorizedVerifier.selector);
-        protocol.attest(masjidId, true, "removed verifier attempt");
+        protocol.attest(masjidId, true);
     }
 
-    function test_QuorumRaisedBeforeThresholdReached() public {
-        vm.prank(proposer);
-        (bytes32 masjidId, ) = protocol.register(
-            "Masjid Baru Lagi",
-            "ipfs://baru",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
-
+    function test_DynamicQuorumWith4Verifiers() public {
         vm.prank(authority);
-        registry.setQuorum(3);
+        registry.addVerifier(address(0x104), "Verifier 4");
+        // 4 verifier → quorum = 3
+
+        vm.prank(proposer);
+        bytes32 masjidId = protocol.register("Masjid Baru Lagi", "ipfs://baru", address(stablecoin), _boardMembers());
 
         vm.prank(kemenagVerifier1);
-        protocol.attest(masjidId, true, "ok");
-
+        protocol.attest(masjidId, true);
         vm.prank(kemenagVerifier2);
-        protocol.attest(masjidId, true, "ok");
+        protocol.attest(masjidId, true);
 
-        MasjidProtocol.MasjidRegistration memory reg = protocol.get(masjidId);
-        assertEq(
-            uint256(reg.status),
-            uint256(MasjidProtocol.RegistrationStatus.Pending)
-        );
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Pending));
 
         vm.prank(kemenagVerifier3);
-        protocol.attest(masjidId, true, "ok");
+        protocol.attest(masjidId, true);
 
-        reg = protocol.get(masjidId);
-        assertEq(
-            uint256(reg.status),
-            uint256(MasjidProtocol.RegistrationStatus.Verified)
-        );
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Verified));
     }
-
-
 
     function test_RevertIfDuplicateName() public {
         vm.startPrank(proposer);
-        protocol.register(
-            "Masjid Al-Huda",
-            "ipfs://1",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        protocol.register("Masjid Al-Huda", "ipfs://1", address(stablecoin), _boardMembers());
 
         vm.expectRevert(MasjidProtocol.AlreadyRegisteredName.selector);
-        protocol.register(
-            "Masjid Al-Huda",
-            "ipfs://2",
-            address(stablecoin),
-            _boardVerifiers(),
-            2
-        );
+        protocol.register("Masjid Al-Huda", "ipfs://2", address(stablecoin), _boardMembers());
         vm.stopPrank();
     }
 
-    function test_OwnerCanRevokeVerifiedMasjid() public {
-        (bytes32 masjidId, address vault) = _registerAndVerify();
+    function test_RejectedNameCanBeReregistered() public {
+        vm.prank(proposer);
+        bytes32 masjidId = protocol.register("Masjid Al-Huda", "ipfs://1", address(stablecoin), _boardMembers());
 
+        vm.prank(kemenagVerifier1);
+        protocol.attest(masjidId, false);
+        vm.prank(kemenagVerifier2);
+        protocol.attest(masjidId, false);
+
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Rejected));
+
+        vm.prank(proposer);
+        bytes32 newId = protocol.register("Masjid Al-Huda", "ipfs://2", address(stablecoin), _boardMembers());
+        assertTrue(newId != masjidId);
+        assertEq(uint256(protocol.get(newId).status), uint256(MasjidProtocol.MasjidStatus.Pending));
+    }
+
+    function test_AdminCanRevoke() public {
+        (bytes32 masjidId, address instance) = _registerAndVerify("Masjid To Revoke");
         protocol.revoke(masjidId);
 
-        MasjidProtocol.MasjidRegistration memory reg = protocol.get(masjidId);
-        assertEq(
-            uint256(reg.status),
-            uint256(MasjidProtocol.RegistrationStatus.Revoked)
-        );
-
-        MasjidInstance instance = MasjidInstance(vault);
-        assertEq(
-            uint256(instance.status()),
-            uint256(IMasjidInstance.VerificationStatus.Revoked)
-        );
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Revoked));
+        assertEq(uint256(MasjidInstance(instance).status()), uint256(IMasjidInstance.VerificationStatus.Revoked));
     }
 
     function test_TransferAdminMirrorsToInstance() public {
-        (bytes32 masjidId, address vault) = _registerAndVerify();
+        (bytes32 masjidId, address instance) = _registerAndVerify("Masjid Admin Transfer");
         address newAdmin = address(0xABCD);
 
         vm.prank(proposer);
         protocol.transferAdmin(masjidId, newAdmin);
 
-        MasjidProtocol.MasjidRegistration memory reg = protocol.get(masjidId);
-        assertEq(reg.masjidAdmin, newAdmin);
-
-        MasjidInstance instance = MasjidInstance(vault);
-        assertEq(instance.masjidAdmin(), newAdmin);
+        assertEq(protocol.get(masjidId).masjidAdmin, newAdmin);
+        assertEq(MasjidInstance(instance).masjidAdmin(), newAdmin);
     }
 
-    function test_RevokeDoesNotChangeVaultOrEnableRefund() public {
-        (bytes32 masjidId, address vault) = _registerAndVerify();
+    function test_AdminFlagAndUnflag() public {
+        (bytes32 masjidId, address instance) = _registerAndVerify("Masjid To Flag");
 
-        protocol.revoke(masjidId);
+        protocol.flag(masjidId);
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Flagged));
+        assertEq(uint256(MasjidInstance(instance).status()), uint256(IMasjidInstance.VerificationStatus.Flagged));
 
-        MasjidProtocol.MasjidRegistration memory reg = protocol.get(masjidId);
-        assertEq(reg.vault, vault);
-
-        MasjidInstance instance = MasjidInstance(vault);
-        assertEq(instance.treasury(), vault);
-        assertEq(instance.stablecoin(), address(stablecoin));
-        assertEq(
-            uint256(instance.status()),
-            uint256(IMasjidInstance.VerificationStatus.Revoked)
-        );
+        protocol.unflag(masjidId);
+        assertEq(uint256(protocol.get(masjidId).status), uint256(MasjidProtocol.MasjidStatus.Verified));
+        assertEq(uint256(MasjidInstance(instance).status()), uint256(IMasjidInstance.VerificationStatus.Verified));
     }
 }

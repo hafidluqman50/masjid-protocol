@@ -5,7 +5,7 @@ import "time"
 type CashIn struct {
 	ID           int64     `gorm:"primaryKey;autoIncrement" json:"id"`
 	InstanceAddr string    `gorm:"column:instance_addr" json:"instance_addr"`
-	MasjidID     *string   `gorm:"column:masjid_id" json:"masjid_id"`
+	MasjidID     *int64    `gorm:"column:masjid_id" json:"masjid_id"`
 	Donor        string    `gorm:"column:donor" json:"donor"`
 	Amount       string    `gorm:"column:amount;type:numeric(38)" json:"amount"`
 	NewBalance   string    `gorm:"column:new_balance;type:numeric(38)" json:"new_balance"`
