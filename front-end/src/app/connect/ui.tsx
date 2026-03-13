@@ -42,7 +42,7 @@ export default function ConnectUI() {
   }, [router]);
 
   useEffect(() => {
-    if (!isConnected || !address || step !== "connect" || signingRef.current) return;
+    if (!isConnected || !address || step !== "connect" || signingRef.current || error) return;
 
     const existing = getClaims();
     if (existing && existing.address.toLowerCase() === address.toLowerCase()) {
@@ -77,7 +77,7 @@ export default function ConnectUI() {
       .finally(() => {
         signingRef.current = false;
       });
-  }, [isConnected, address, step, router, signMessageAsync]);
+  }, [isConnected, address, step, error, router, signMessageAsync]);
 
   const handleNameSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,9 +141,18 @@ export default function ConnectUI() {
               </div>
 
               {error && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-center">
-                  {error}
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-center">
+                    {error}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setError(null)}
+                  >
+                    Coba lagi
+                  </Button>
+                </div>
               )}
 
               <div className="flex justify-center">
