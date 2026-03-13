@@ -49,8 +49,7 @@ export function getClaims(): JWTClaims | null {
   return decodeToken(token);
 }
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1";
+import { API_BASE } from "./utils";
 
 export async function siweLogin(
   address: string,
